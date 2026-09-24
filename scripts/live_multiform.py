@@ -35,6 +35,14 @@ BASE = _a.base.rstrip("/")
 KEY = [l.split("=", 1)[1].strip() for l in open(_a.key_file) if l.startswith("BAIDU_API_KEYS")][0]
 CDN_IMG = "https://aisearch.cdn.bcebos.com/homepage/chat_tool/v2/ai_image.png"
 
+#: **语义夹具**：部分工具对"不匹配的输入"会回「编辑器链接」而非报错（2026-09-24 实测：
+#: 美颜用无脸合成图 ❌ / 用真人样图 ✅ 27.8s）⇒ 这些工具必须喂**语义匹配**的输入，
+#: 否则会得到**假阴性**（并可能被误读成"上游漂移"）。样图取自 `image.baidu.com/aigc/extinfo`。
+PORTRAIT_IMG = ("https://gips1.baidu.com/it/u=2209565062,825139721"
+                "&fm=3028&app=3028&f=JPEG&fmt=auto&q=100&size=f500_500")
+SEMANTIC_TOOLS = {"wenxin:beauty": PORTRAIT_IMG, "wenxin:ps": PORTRAIT_IMG,
+                  "wenxin:removeperson": PORTRAIT_IMG, "wenxin:matting-pro": PORTRAIT_IMG}
+
 
 def post(path: str, payload: dict, *, timeout: int = 300):
     req = urllib.request.Request(
@@ -174,10 +182,14 @@ REAL = [
     ("wenxin:bgreplace", {"mask": MASK_URI, "prompt": "大雪纷飞的街道", "image": IMG_URI}),
     ("wenxin:redraw", {"image": IMG_URI}),
     ("wenxin:similar", {"image": IMG_URI}),
+    # 语义工具：必须喂**语义匹配**的图（人像），否则会得到"编辑器链接"假阴性
+    ("wenxin:beauty", {}), ("wenxin:ps", {}),
+    ("wenxin:removeperson", {}), ("wenxin:matting-pro", {}),
 ]
 C_OK = 0
 for mid, extra in REAL:
-    st, r, dt = post("/v1/images/generations", {"model": mid, **({"image": CDN_IMG} | extra)})
+    st, r, dt = post("/v1/images/generations",
+                      {"model": mid, **({"image": SEMANTIC_TOOLS.get(mid, CDN_IMG)} | extra)})
     if st == 200:
         it = (r.get("data") or [{}])[0]
         nb = len(it.get("b64_json", "")) * 3 // 4
