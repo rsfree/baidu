@@ -151,11 +151,11 @@ check("dry_run 有 preview 且零上游请求",
       and "aichat/api/conversation" in body["preview"]["would_post_to"]
       and after == before)
 
-# 4) 未取证闸门（reimagine 无老接口映射 ⇒ 兜底不改变门禁）
+# 4) 已移除的兜底编号（toolType 13/28~34 = 通用编辑器兜底，不是能力 ⇒ 不注册）
 st, body, _ = post("/v1/images/generations",
                    {"model": "wenxin:reimagine", "image": data_uri})
-check("未取证且无兜底映射 → 503 + 开启方式",
-      st == 503 and body["error"]["code"] == "capability_not_verified",
+check("已移除的兜底编号 → 400 unknown_model（锁定「不注册」决定）",
+      st == 400 and body["error"]["code"] == "unknown_model",
       f"status={st}")
 
 # 4.5) 遮罩类能力缺 mask → 400（必填字段，触网之前就拒）

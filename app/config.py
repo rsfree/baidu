@@ -107,7 +107,8 @@ class Settings(BaseSettings):
     PORT: int = 8700
     LOG_LEVEL: str = "INFO"
     MEDIA_DIR: str = "var/media"   # response_format=url 时的落盘目录
-    # 未取证能力闸门：dewatermark / replace / erase / reimagine 默认不可用（见 app/models.py）。
+    # 未取证能力闸门：dewatermark / erase / replace / bgreplace / redraw / similar 默认不可用
+    #（前四个与 bgreplace 走老接口兜底，redraw/similar 为 legacy-only；见 app/models.py）。
     ALLOW_UNVERIFIED: bool = False
 
     # ------------------------------------------------------------ 可观测性（可选，可静默降级）

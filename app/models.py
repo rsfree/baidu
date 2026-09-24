@@ -256,16 +256,6 @@ CAPABILITIES: dict[str, Capability] = {
         ),
         notes="需 `mask`（黑底白框）＋建议给 `prompt`（替换内容，实测形态里映射到老接口 `text`）",
     ),
-    "wenxin:reimagine": Capability(
-        name="wenxin:reimagine", title="相关图编",
-        tool_type="13", verified=False, legacy_type=None,
-        evidence="§3：toolType 13/28~34 同指该能力，枚举期出图 ✅，但**具体语义待坐实**",
-        notes=(
-            "疑似即页面上的「AI重绘 / 相似图」家族（页面两个独立工具卡；本服务已分别以 "
-            "wenxin:redraw / wenxin:similar 走老接口实现）。要试主链形态请设 "
-            "BAIDU_ALLOW_UNVERIFIED=1（语义可能与预期不符）"
-        ),
-    ),
     # ------------------------------------------- legacy-only（页面有、主链未坐实，2 项）
     "wenxin:redraw": Capability(
         name="wenxin:redraw", title="AI重绘",
@@ -299,9 +289,11 @@ NOT_REGISTERED: dict[str, str] = {
         "与 toolType 11 同指「背景替换」（§3）。重复注册会让同一能力有两个模型名 —— "
         "模型名侧只保留 wenxin:bgreplace。"
     ),
-    "toolType 28~34 · 相关图编（重复编号）": (
-        "§3：28~34 与 13 同指「相关图编」一类，语义未坐实。页面上的「AI重绘 / 相似图」"
-        "已分别走老接口落地（wenxin:redraw / wenxin:similar）；主链编号的坐实待真实交互报文。"
+    "toolType 13 / 28~34 · 通用编辑器兜底（**不注册**）": (
+        "2026-09-24 实测：这些编号回的是 **`image-generate` + `items:null` + `picEditBaseUrl`**，"
+        "而链接里 `toolType=0&word=`（**空**）⇒ 上游对「未知 toolType」的**通用编辑器兜底跳转**，"
+        "不是能力。此前 §3 记的「同指相关图编、出图 ✅」是对兜底响应的误读 —— 已撤。"
+        "（页面上的「AI重绘 / 相似图」是独立工具，已分别以 wenxin:redraw / wenxin:similar 走老接口落地。）"
     ),
     "toolType 6/7 · 新接口无效编号": (
         "§3 实测：新接口 6/7 返回「服务繁忙」⇒ 编号不存在。"
@@ -315,9 +307,9 @@ DELIBERATELY_ABSENT: dict[str, str] = {
         "§3 枚举出图 ✅，但它**不产图**（产文案）—— 挂在图片端点上属语义污染。"
         "与 biz-api 的取舍一致：刻意不注册。要文案请走对话类上游。"
     ),
-    "老接口的风格(14+style) / 背景替换(12+text)": (
-        "老接口里这两项需要额外的语义参数（`style` / `text`），本服务的入口面没有"
-        "对应字段 ⇒ 不做「无参透传」的假能力。要接需先做字段设计 + 实测取证。"
+    "（已落地，留档）老接口的风格(14+style) / 背景替换(12+text)": (
+        "2026-09-24 均已攻克：**换风格**走主链专属形状（`workspace_piccreate_hfg` + `ext.style/text`，"
+        "入参 `style`）；**背景替换**走老接口 `type=12` + `picInfo2`(遮罩) + `text`（入参 `mask` + `prompt`）。"
     ),
 }
 

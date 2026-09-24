@@ -1,7 +1,7 @@
 # baidu-service
 
 **文心助手**（`wenxin.baidu.com` / 后端 `chat.baidu.com`）图片编辑的**同步出口**：
-20 项能力、图进图出、一条 `POST` 拿到结果。工程骨架参考 `../textin` / `../jimeng`。
+19 项能力、图进图出、一条 `POST` 拿到结果。工程骨架参考 `../textin` / `../jimeng`。
 
 ```bash
 # 1) 铸造匿名身份（免登录、零生成请求；在 reverse-proxy 仓）
@@ -64,7 +64,7 @@ app/config.py           配置（BAIDU_* 前缀；每个旋钮有读者）
 app/errors.py           错误分类：risk_control→429(不可重试) / auth→503 / param→400 / timeout→504 / upstream→502
 app/gate.py             速率闸门（串行+最小间隔+滑窗）+ 昆仑冷却窗（进程内 ⇒ 单 worker）
 app/media.py            输入嗅探（magic bytes）/ 三形态归一 / 图像标准化 / 落盘 / 尺寸
-app/models.py           能力注册表（20 项 + 7 项门禁 + 刻意缺席）
+app/models.py           能力注册表（19 项 + 6 项门禁 + 刻意缺席）
 app/service.py          校验 → 门禁 → 输入准备 → 调用 → 装配（响应唯一出口）
 app/main.py             HTTP 层（错误信封 / 鉴权 / 运维面 / /files）
 app/upstream/baidu/     翻译层（纯函数）+ HTTP 客户端（凭据/BOS/SSE/出口池）
@@ -81,7 +81,7 @@ app/upstream/baidu/     翻译层（纯函数）+ HTTP 客户端（凭据/BOS/SS
 ```bash
 <venv>/bin/python -m pytest -q --basetemp=/tmp/baidu-pytest   # 119 例，零出网
 <venv>/bin/python -m ruff check app tests scripts
-<venv>/bin/python scripts/probe.py            # shapes 20 条 + loop 20 条（假上游，零触网）
+<venv>/bin/python scripts/probe.py            # shapes 19 条 + loop 19 条（假上游，零触网）
 PY=<venv>/bin/python zsh scripts/smoke.sh     # 真起服务+真 HTTP+假上游，22 项
 <venv>/bin/python scripts/probe.py --live --cap wenxin:clarity --image <url> \
     --cookie-file ../reverse-proxy/wenxin/var/identity.json    # ⚠️ 真实调用（免费，别连打）

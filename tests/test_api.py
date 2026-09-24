@@ -62,7 +62,7 @@ def test_readyz_reports_cookie_and_counts(tmp_path):
     checks = body["checks"]
     assert checks["cookie_configured"] is True
     assert checks["credentials"]["source"] == "explicit"
-    assert checks["capabilities"] == {"total": 20, "available": 13}
+    assert checks["capabilities"] == {"total": 19, "available": 13}
     assert checks["legacy"] == {"mode": "off", "base": None}
     assert checks["risk_window"]["cooling"] is False
     assert checks["proxy_pool"] == []
@@ -115,7 +115,7 @@ def test_models_includes_unverified_when_gate_open(tmp_path):
     app, _ = _app(tmp_path, ALLOW_UNVERIFIED=True)
     with TestClient(app) as c:
         ids = [m["id"] for m in c.get("/v1/models").json()["data"]]
-    assert "wenxin:dewatermark" in ids and len(ids) == 18
+    assert "wenxin:dewatermark" in ids and len(ids) == 17
 
 
 def test_capabilities_explains_absences(tmp_path):
@@ -372,8 +372,8 @@ def test_legacy_unlocks_dewatermark_in_models(tmp_path):
     dewater = [m for m in caps["models"] if m["id"] == "wenxin:dewatermark"][0]
     assert dewater["legacy_type"] == "1"
     assert caps["legacy"]["mode"] == "fallback"
-    # 无映射的未取证能力仍在 not_available（不制造假能力）
-    assert "wenxin:reimagine" in [m["id"] for m in caps["not_available"]]
+    # 未取证能力全部由老接口解锁 ⇒ 开兜底后不再有 not_available（不制造假能力）
+    assert caps["not_available"] == []
     # 换风格已攻克（主链专属 sa + style），仍在可用列表里
     assert "wenxin:restyle" in ids
 
