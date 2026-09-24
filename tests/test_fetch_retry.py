@@ -127,3 +127,29 @@ def test_retryable_classification():
     assert BaiduClient._fetch_retryable(UpstreamUnavailableError("rate", http_status=429))
     assert not BaiduClient._fetch_retryable(UpstreamUnavailableError("nope", http_status=404))
     assert not BaiduClient._fetch_retryable(ApiError(400, "content_too_large", "太大"))
+
+
+# ------------------------------------------------- 老接口拒单要「报错友好」（2026-09-24）
+
+def test_legacy_refusal_messages_are_actionable():
+    """老接口拒单按 `resType` 分类给可操作提示 —— 别只丢一个 status=0。
+
+    两类实测拒法：`resType=2`（入参体积/内容）与「无任务号且无 resType」（疑似限流）。
+    """
+
+    def make(handler_body):
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/aigc/pccreate"):
+                return httpx.Response(200, json=handler_body)
+            return httpx.Response(200, json={})          # pcquery 用不到（create 就拒了）
+
+        return _client(handler)
+
+    for body, expect in (({"status": 0, "resType": 2}, "入参体积"),
+                         ({"status": 0, "resType": None}, "限流"),
+                         ({"status": 0, "resType": 9}, "未知拒法")):
+        c = make(body)
+        with pytest.raises(UpstreamUnavailableError) as ei:
+            arun(c.legacy_process("1", b"\x89PNG\r\n\x1a\n" + b"0" * 32))
+        arun(c.aclose())
+        assert expect in str(ei.value), f"{body} ⇒ {ei.value}"

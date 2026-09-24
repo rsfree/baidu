@@ -152,6 +152,18 @@ def render(settings: Settings) -> str:
     add("")
     add("- `size` 取：" + "、".join(f"`{r}`" for r in EXPAND_RATIOS))
     add("")
+    add("## 上游边界（实测，服务端已尽力兼容）")
+    add("")
+    add("- **老接口入参体积**：`type=1`（去水印）实测 600×400/39.9KB 收单、800×533/63.2KB 被拒 ⇒")
+    add(f"  本服务**超限自动等比压缩**（当前上限 {settings.LEGACY_MAX_IMAGE_SIDE}px / "
+        f"{settings.LEGACY_MAX_IMAGE_BYTES}B），压缩前后在 `upstream.legacy.fitted` 与 `warnings[]` 里如实给出。")
+    add("- **老接口频率**：短时间连发（实测约数十次）会得到「无任务号、无 resType」的拒单 ⇒ 请节流重试；")
+    add("  本服务自身有节流（`BAIDU_MIN_INTERVAL`）与闸门，正常经本服务调用不会这么快。")
+    add("- **结果图取回**：上游结果 CDN 偶发慢（实测 38~47s）⇒ 已加超时 + 重试"
+        f"（`BAIDU_RESULT_FETCH_TIMEOUT={settings.RESULT_FETCH_TIMEOUT:g}` / "
+        f"`BAIDU_RESULT_FETCH_RETRIES={settings.RESULT_FETCH_RETRIES}`）。")
+    add("- **退化输入**：极小图（如 1×1）在部分能力上必失败（上游假阴性）—— 请用真实尺寸的图。")
+    add("")
     add("## 兜底与降级")
     add("")
     add("- 本服务有**两条上游通路**：主链（`chat.baidu.com`）为主，"

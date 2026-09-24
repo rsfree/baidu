@@ -583,10 +583,22 @@ class BaiduClient:
                     detail={"http_status": r.status_code, "body_head": r.text[:200]},
                 ) from exc
             if created.get("status") != 0 or not created.get("pcEditTaskid"):
+                # 拒单要**报错友好**：按实测的两种拒法分别给可操作提示（2026-09-24）。
+                res_type = created.get("resType")
+                if res_type == 2:
+                    hint = ("疑似**入参体积/内容**不符合老接口要求：本服务已自动压缩到 "
+                            f"≤{self._s.LEGACY_MAX_IMAGE_SIDE}px / {self._s.LEGACY_MAX_IMAGE_BYTES}B；"
+                            "若仍被拒请换更小或更规整的图，或改用主链能力")
+                elif res_type is None:
+                    hint = ("响应里既无任务号也无 resType —— **多为频繁调用触发的限流**（实测连发 70 次后出现）："
+                            "请稍后重试；本服务自身有节流（BAIDU_MIN_INTERVAL），直接打上游才会这样")
+                else:
+                    hint = f"resType={res_type}（未知拒法）：请把该输入留档反馈，便于补进边界表"
                 raise UpstreamUnavailableError(
                     f"老接口拒绝创建（status={created.get('status')}，"
-                    f"message={created.get('message')}）",
-                    detail={"body": json.dumps(created, ensure_ascii=False)[:300]},
+                    f"message={created.get('message')}，resType={res_type}）：{hint}",
+                    detail={"body": json.dumps(created, ensure_ascii=False)[:300],
+                            "res_type": res_type, "hint": hint},
                 )
             task_id = str(created["pcEditTaskid"])
             info.update({"task_id": task_id, "create_status": created.get("status")})
