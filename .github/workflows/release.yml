@@ -196,11 +196,11 @@ jobs:
           python3 -c "import json;d=json.load(open('/tmp/health.json'));assert d['version']=='$VERSION',d"
 
           curl -sf http://127.0.0.1:18700/readyz | tee /tmp/ready.json; echo
-          python3 -c "import json;d=json.load(open('/tmp/ready.json'));c=d['checks'];assert d['status']=='ok',d;assert c['cookie_configured'] is True,c;assert c['capabilities']=={'total':20,'available':18},c"
+          python3 -c "import json;d=json.load(open('/tmp/ready.json'));c=d['checks'];assert d['status']=='ok',d;assert c['cookie_configured'] is True,c;assert c['capabilities']=={'total':20,'available':19},c"
 
-          # 能力面：免鉴权 /v1/models 列**本部署可用**的 18 条（含老接口补位的去水印）
+          # 能力面：免鉴权 /v1/models 列**本部署可用**的 19 条（含老接口补位的去水印/背景替换）
           curl -sf http://127.0.0.1:18700/v1/models | tee /tmp/models.json; echo
-          python3 -c "import json;d=json.load(open('/tmp/models.json'));ids=[m['id'] for m in d['data']];assert len(ids)==18,len(ids);assert 'wenxin:dewatermark' in ids,ids;assert 'wenxin:restyle' in ids,ids"
+          python3 -c "import json;d=json.load(open('/tmp/models.json'));ids=[m['id'] for m in d['data']];assert len(ids)==19,len(ids);assert 'wenxin:dewatermark' in ids,ids;assert 'wenxin:restyle' in ids,ids;assert 'wenxin:bgreplace' in ids,ids"
 
           # 鉴权接线自证：无 key 的受保护请求必须 401（在 healthz 成功之后再探）
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST \
@@ -213,6 +213,12 @@ jobs:
             -d '{"model":"wenxin:erase","image":"data:image/png;base64,iVBORw0KGgo=","mask":"data:image/png;base64,iVBORw0KGgo=","dry_run":true}' \
             | tee /tmp/dry.json; echo
           python3 -c "import json;d=json.load(open('/tmp/dry.json'));assert d['dry_run'] is True,d;assert d['preview']['legacy']['type']=='8',d['preview']['legacy']"
+          # 背景替换（2026-09-24 攻克）：老接口 type=12 + 遮罩 + text → 干跑计划必须带上
+          curl -s -X POST http://127.0.0.1:18700/v1/images/generations \
+            -H "Authorization: Bearer sk-smoke" -H 'Content-Type: application/json' \
+            -d '{"model":"wenxin:bgreplace","image":"data:image/png;base64,iVBORw0KGgo=","mask":"data:image/png;base64,iVBORw0KGgo=","prompt":"大雪纷飞的街道","dry_run":true}' \
+            | tee /tmp/dry_bg.json; echo
+          python3 -c "import json;d=json.load(open('/tmp/dry_bg.json'));leg=d['preview']['legacy'];assert leg['type']=='12',leg;assert leg['mask'] is True and leg['text_from_prompt'] is True,leg"
 
           # 换风格（2026-09-24 攻克）：干跑必须给出实测形状「专属 sa + ext.style/text + TEXT(标签)」
           curl -s -X POST http://127.0.0.1:18700/v1/images/generations \

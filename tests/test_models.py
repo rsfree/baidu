@@ -59,14 +59,14 @@ def test_every_capability_has_evidence_and_title():
 def test_mask_and_prompt_semantics_are_registered():
     """遮罩 / prompt / 工具入口码的登记口径（均为实测所得）。"""
     assert {n for n, c in CAPABILITIES.items() if c.requires_mask} == \
-        {"wenxin:erase", "wenxin:replace"}
-    assert {n for n, c in CAPABILITIES.items() if c.legacy_uses_prompt} == {"wenxin:replace"}
+        {"wenxin:erase", "wenxin:replace", "wenxin:bgreplace"}
+    assert {n for n, c in CAPABILITIES.items() if c.legacy_uses_prompt} == \
+        {"wenxin:replace", "wenxin:bgreplace"}
     assert dict(lookup("wenxin:redraw").legacy_extra) == {"create_level": "2"}
     assert dict(lookup("wenxin:similar").legacy_extra) == {"create_level": "5"}
     # 工具入口形状（站点 UI 实测的 enter_type）——目前只在背景替换/换风格上
     assert {n: c.entry_type for n, c in CAPABILITIES.items() if c.entry_type} == {
-        "wenxin:bgreplace": "pic_picfunc_11", "wenxin:restyle": "pic_picfunc_14"}
-    assert {n for n, c in CAPABILITIES.items() if c.needs_instruction} == {"wenxin:bgreplace"}
+        "wenxin:restyle": "pic_picfunc_14"}   # 背景替换改走老接口 12，不再需要入口码
     assert {n for n, c in CAPABILITIES.items() if c.needs_style} == {"wenxin:restyle"}
     assert len(lookup("wenxin:restyle").style_table) == 17
     assert lookup("wenxin:restyle").workspace_sa == "workspace_piccreate_hfg"
@@ -114,10 +114,10 @@ def test_legacy_unlocks_exactly_the_mapped_capabilities():
     default = available(allow_unverified=False)
     with_legacy = available(allow_unverified=False, legacy=True)
     assert len(default) == 13
-    # 13 主链 + 3 有映射的未取证（去水印/消除/局部替换）+ 2 legacy-only = 18
-    assert len(with_legacy) == 18
+    # 13 已取证 + 4 有映射的未取证（去水印/消除/局部替换/背景替换）+ 2 legacy-only = 19
+    assert len(with_legacy) == 19
     assert {"wenxin:dewatermark", "wenxin:erase", "wenxin:replace",
-            "wenxin:redraw", "wenxin:similar"} <= set(with_legacy)
+            "wenxin:redraw", "wenxin:similar", "wenxin:bgreplace"} <= set(with_legacy)
     assert "wenxin:reimagine" not in with_legacy         # 无映射 ⇒ 不因兜底变可用
     assert "wenxin:restyle" in with_legacy               # 主链已攻克（与老接口兜底无关）
 
@@ -129,6 +129,7 @@ def test_legacy_type_registry_is_evidence_based():
         "wenxin:clarity": "3", "wenxin:expand": "4", "wenxin:matting": "9",
         "wenxin:sketch": "15", "wenxin:dewatermark": "1", "wenxin:erase": "8",
         "wenxin:replace": "5", "wenxin:redraw": "6", "wenxin:similar": "7",
+        "wenxin:bgreplace": "12",
     }
 
 

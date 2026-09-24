@@ -83,7 +83,7 @@ def phase_shapes() -> int:
                 payload["mask"] = MASK_URI
             if cap.needs_style:
                 payload["style"] = cap.style_table[0][1]
-            elif cap.legacy_uses_prompt or cap.needs_instruction:
+            elif cap.legacy_uses_prompt:
                 payload["prompt"] = "一只橘猫"
             r = c.post("/v1/images/generations", json=payload)
             body = r.json()
@@ -154,7 +154,7 @@ def phase_loop() -> int:
                 payload["mask"] = MASK_URI
             if cap.needs_style:
                 payload["style"] = cap.style_table[0][1]
-            elif cap.legacy_uses_prompt or cap.needs_instruction:
+            elif cap.legacy_uses_prompt:
                 payload["prompt"] = "一只橘猫"
             r = c.post("/v1/images/generations", json=payload)
             body = r.json()

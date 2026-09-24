@@ -50,11 +50,11 @@
 |---|---|---|
 | `model` | ✅ | `wenxin:<name>`（20 项，见 §7）；未注册名 ⇒ 400 `unknown_model` |
 | `image` | ✅ | **三种形态**：data URI / http(s) URL / 裸 base64。类型**按真实字节嗅探**（png/jpeg/webp/bmp；**GIF 不收**） |
-| `mask` | ❌ | **只有「消除 / 局部替换」消费**（这两个能力**必填**，缺 ⇒ 400 `missing_mask`）：**黑底 + 白框**的图片，**白色标记「要处理的区域」**；形态同 `image`。其余能力给了 mask ⇒ 忽略 + `warnings[]` 明示 |
+| `mask` | ❌ | **只有「消除 / 局部替换 / 背景替换」消费**（这两个能力**必填**，缺 ⇒ 400 `missing_mask`）：**黑底 + 白框**的图片，**白色标记「要处理的区域」**；形态同 `image`。其余能力给了 mask ⇒ 忽略 + `warnings[]` 明示 |
 | `style` | ❌ | **只有「换风格」消费**（**必填**，缺 ⇒ 400 `missing_style`；未知值 ⇒ 400 `unknown_style` 并回 17 项候选）：风格 **id**（如 `miyazaki`）或**中文标签**（如 `宫崎骏风`）。17 项见 `/capabilities` 的 `styles`；请求时 id 进 `ext.style`、标签进 `ext.text` 与 TEXT query |
 | `response_format` | ❌ | `b64_json`（默认）/ `url`（落盘 + `/files/{name}`） |
 | `size` | ❌ | **只有「扩图」消费**：解释为 `image_expand` 比例（`"4:3"`；也接受 `"WxH"` 并化简）。其余能力**忽略 + `warnings[]` 明示** |
-| `prompt` | ❌ | 主链 workspace 形状要求 query 严格等于能力名 ⇒ **默认忽略（`warnings[]` 明示）**；**`wenxin:replace` 上映射为老接口 `text`**；**`wenxin:restyle` / `wenxin:bgreplace` 上是「指令文本」**（工具入口形状 `sa=searchbox_image` + `enter_type`，缺 ⇒ 400 `missing_instruction`；干跑放行）；`BAIDU_PROMPT_MODE=prepend` 才在主链拼接（**未经验证**） |
+| `prompt` | ❌ | 主链 workspace 形状要求 query 严格等于能力名 ⇒ **默认忽略（`warnings[]` 明示）**；**`wenxin:replace` / `wenxin:bgreplace` 上映射为老接口 `text`**（背景替换的替换内容）；**`wenxin:restyle` / `wenxin:bgreplace` 上是「指令文本」**（工具入口形状 `sa=searchbox_image` + `enter_type`，缺 ⇒ 400 `missing_instruction`；干跑放行）；`BAIDU_PROMPT_MODE=prepend` 才在主链拼接（**未经验证**） |
 | `dry_run` | ❌ | 也可用请求头 `X-Avm-Dry-Run: 1`；**零上游请求**，返回完整出站预览（`chat_token` 已打码） |
 
 **键集纪律**（与兄弟服务同源）：
@@ -147,7 +147,7 @@
 
 | 闸门 | 真跑 | dry_run | 说明 |
 |---|---|---|---|
-| 未取证能力（7 项） | 503 | ✅ 放行 | 开 `BAIDU_LEGACY` 后其中 5 项经老接口可用；另 2 项（`reimagine` / `bgreplace`）**无可用通路**（编辑器/agent 形态） |
+| 未取证能力（7 项） | 503 | ✅ 放行 | 开 `BAIDU_LEGACY` 后其中 **6 项**经老接口可用（去水印/消除/局部替换/背景替换/重绘/相似图）；仅 `reimagine` 无可用通路 |
 | 换风格缺/错 `style` | 400 | ✅ 放行 | 真跑缺 ⇒ `missing_style`（含 17 项候选）；干跑按首个风格预览 |
 | 工具入口形状缺指令（`restyle`/`bgreplace`） | 400 | ✅ 放行 | 真跑缺 `prompt` ⇒ `missing_instruction`；干跑按占位预览 |
 | 遮罩类缺 `mask` | 400 | ✅ 放行 | 必填字段校验在触网前；干跑只做计划 |
@@ -173,7 +173,7 @@
 | `wenxin:clarity` | 变清晰（4× 放大，上限 5472×3072） | ✅ |
 | `wenxin:expand` | 扩图（消费 `size`） | ✅ |
 | `wenxin:matting` / `wenxin:matting-pro` | 抠图 / 背景抠图（同能力域） | ✅ |
-| `wenxin:bgreplace` | 背景替换 | ⛔ 未取证（**2026-09-24 复测已变编辑器/agent 形态**：workspace 形状回「未识别到主体」，工具入口形状只回对话文字；老接口 12 已死） |
+| `wenxin:bgreplace` | 背景替换（**需 `mask` + `prompt`**） | ✅ **2026-09-24 攻克**：老接口 `type=12` + `picInfo2`(遮罩) + `text` ⇒ 真跑 4.1s / 3.8s（900×600）。**此前 7 次失败全因没带遮罩** —— 站点该工具面板正是「识别背景/涂抹要替换区域 + 输入替换的内容」。主链形态仍不可用（回「未识别到主体」），故与消除/局部替换同构走兜底（`BAIDU_LEGACY=fallback`） |
 | `wenxin:sketch` | 提线稿（最慢，20~25s） | ✅ |
 | `wenxin:restyle` | 换风格（**需 `style`**，17 项可选） | ✅ **2026-09-24 攻克**：站点真实报文 = `sa=workspace_piccreate_hfg` + `enter_type=pic_picfunc_14` + `ext{…, image_source:1, style:<id>, text:<标签>}` + `query=[IMAGE, TEXT(标签)]`；真跑 宫崎骏风 10.3s / 油画风 10.7s（均 900×600）。风格表由 `image.baidu.com/aigc/extinfo` 下发 |
 | `wenxin:textreplace` | 文字替换 | ✅ |

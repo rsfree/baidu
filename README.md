@@ -79,7 +79,7 @@ app/upstream/baidu/     翻译层（纯函数）+ HTTP 客户端（凭据/BOS/SS
 ## 3. 测试与自检
 
 ```bash
-<venv>/bin/python -m pytest -q --basetemp=/tmp/baidu-pytest   # 121 例，零出网
+<venv>/bin/python -m pytest -q --basetemp=/tmp/baidu-pytest   # 119 例，零出网
 <venv>/bin/python -m ruff check app tests scripts
 <venv>/bin/python scripts/probe.py            # shapes 20 条 + loop 20 条（假上游，零触网）
 PY=<venv>/bin/python zsh scripts/smoke.sh     # 真起服务+真 HTTP+假上游，22 项

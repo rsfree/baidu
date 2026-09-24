@@ -252,7 +252,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "requires_mask": cap.requires_mask,
                 "legacy_uses_prompt": cap.legacy_uses_prompt,
                 "entry_type": cap.entry_type,
-                "needs_instruction": cap.needs_instruction,
                 "needs_style": cap.needs_style,
                 "styles": [{"id": i, "label": lb} for i, lb in cap.style_table] or None,
                 "accepts": list(ACCEPTS),

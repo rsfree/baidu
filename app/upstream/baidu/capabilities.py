@@ -133,44 +133,9 @@ def build_body(
     干跑才能在不触网的前提下构造请求体。
     """
     tt = cap.tool_type
-    if cap.entry_type and not cap.needs_style:
-        return {
-            "message": {
-                "inputMethod": "chat_search",
-                "isRebuild": False,
-                "content": {"query": "", "agentInfo": {"agent_id": [""], "params": ""},
-                            "agentInfoList": [], "extData": {}},
-                "searchInfo": {
-                    "srcid": "", "order": "", "tplname": "", "dqaKey": "",
-                    "re_rank": str(rank), "ori_lid": ori_lid or lid,
-                    "sa": "searchbox_image",
-                    "enter_type": cap.entry_type,
-                    "chatParams": {"setype": "csaitab",
-                                   "chat_token": build_chat_token(token, query_text, lid)},
-                    "isPrivateChat": False,
-                    "usedModel": {"modelFunction": {"deepSearch": "0", "thinkMode": "0"},
-                                  "modelName": "smartMode", "showModelName": "smartMode"},
-                    "landingPageSwitch": "", "landingPage": "aitab", "ecomFrom": "",
-                    "hasLocPermission": "", "lid": "",
-                    "capsuleSelectMode": "fast", "showMindMap": False,
-                    "interaction_type": 2,
-                    "deepDecisionInfo": {"isDeepDecision": 0},
-                },
-                "from": "", "source": "pc_csaitab",
-                "query": [
-                    {"type": "IMAGE", "data": {"image": {"image_id": "",
-                                                         "image_url": image_url}}},
-                    {"type": "TEXT", "data": {"text": {
-                        "query": query_text, "text_type": "",
-                        "extData": json.dumps({"toolType": tt, "disableReply": True},
-                                              ensure_ascii=False)}}},
-                ],
-                "agent_id": "",
-            },
-            "setype": "csaitab",
-            "rank": rank,
-        }
-
+    # 注：站点 UI 的「工具入口形状」（sa=searchbox_image + enter_type + 无 mcpInfo）
+    # **本服务不使用**（实测只回对话文字/编辑器链接）—— 证据留在 docs/UPSTREAM.md §7。
+    # enter_type 仅作为 workspace 形状里的 `enter_type` 取值（见下）。
     ext: dict[str, Any] = {"type": tt, "image": image_url, "image_source": 0, "channel": "edit"}
     if expand:
         ext["image_expand"] = expand

@@ -223,25 +223,6 @@ async def run(
         query_text = label
         warnings.append(f"style={sid}（{label}）→ ext.style/text + TEXT query；"
                         f"sa={cap.workspace_sa}（实测形状）")
-    elif cap.needs_instruction:
-        if not prompt or not prompt.strip():
-            if dry_run:      # 闸门语义：干跑穿透（可零成本预演计划）
-                warnings.append(f"「{cap.title}」走工具入口形状"
-                                f"（enter_type={cap.entry_type}）：真实调用需要 prompt（指令文本），"
-                                f"干跑未提供 ⇒ 预览按占位构造")
-                query_text = f"<{cap.title}指令>"
-            else:
-                raise ApiError(
-                    400, "missing_instruction",
-                    f"「{cap.title}」需要 prompt（指令文本，如「宫崎骏风格」/「大雪纷飞的背景」）—— "
-                    f"该能力走**工具入口形状**（sa=searchbox_image + enter_type={cap.entry_type}），"
-                    f"上游按自然语言指令出图；不给指令只会收到风格分析文字或编辑器链接",
-                    model=cap.name,
-                )
-        else:
-            query_text = prompt.strip()
-            warnings.append(f"prompt 作为指令文本透传（{cap.title} 走工具入口形状："
-                            f"sa=searchbox_image + enter_type={cap.entry_type}）")
     elif prompt:
         if settings.PROMPT_MODE == "prepend" and prompt.strip() not in cap.title:
             query_text = f"{prompt.strip()}\n{cap.title}"

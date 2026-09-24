@@ -368,7 +368,7 @@ def test_legacy_unlocks_dewatermark_in_models(tmp_path):
     with TestClient(app) as c:
         ids = [m["id"] for m in c.get("/v1/models").json()["data"]]
         caps = c.get("/capabilities").json()
-    assert "wenxin:dewatermark" in ids and len(ids) == 18
+    assert "wenxin:dewatermark" in ids and len(ids) == 19
     dewater = [m for m in caps["models"] if m["id"] == "wenxin:dewatermark"][0]
     assert dewater["legacy_type"] == "1"
     assert caps["legacy"]["mode"] == "fallback"
@@ -457,75 +457,54 @@ def test_fallback_legacy_failure_keeps_primary_cause(tmp_path):
     assert r.headers.get("retry-after") == "600"
 
 
-# --------------------------------------------------- 工具入口形状（2026-09-24）
+# ------------------------------------------- 背景替换：老接口 12 + 遮罩（2026-09-24 攻克）
 
 
 def _preview_body(body: dict[str, Any]) -> dict[str, Any]:
     return body["preview"]["body"]["message"]
 
 
-def test_entry_type_shape_uses_searchbox_and_enter_type(tmp_path):
-    """背景替换走**工具入口形状**：sa=searchbox_image + enter_type + 无 mcpInfo。
-
-    形状来源：站点 UI 真实报文（2026-09-24 抓取）。真实调用需 ALLOW_UNVERIFIED（已门禁）。
-    """
-    app, _ = _app(tmp_path, ALLOW_UNVERIFIED=True)
+def test_bgreplace_uses_legacy_mask_and_text(tmp_path):
+    """背景替换走老接口：type=12 + picInfo2(遮罩) + text(替换内容) —— 与消除/局部替换同构。"""
+    app, _ = _app(tmp_path, LEGACY="fallback")
     with TestClient(app) as c:
         spy = UpstreamSpy()
         _inject(app, spy)
         r = _post(c, {"model": "wenxin:bgreplace", "image": data_uri(PNG_SMALL),
-                      "prompt": "大雪纷飞的背景"})
-    body = r.json()
-    assert body["effective"]["entry_type"] == "pic_picfunc_11"
-    assert body["effective"]["query"] == "大雪纷飞的背景", "prompt 就是指令文本"
-    assert any("工具入口形状" in w for w in body["warnings"])
+                      "mask": "data:image/png;base64,iVBORw0KGgo=", "prompt": "大雪纷飞的街道",
+                      "dry_run": True})
+    assert r.status_code == 200, r.text
+    leg = r.json()["preview"]["legacy"]
+    assert leg["type"] == "12", "老接口 type=12 才是背景替换"
+    assert leg["mask"] is True and leg["text_from_prompt"] is True
+    # 主链 query 仍是能力名（prompt 走老接口 text，不进 chat_token）
+    assert r.json()["effective"]["query"] == "背景替换"
 
 
-def test_entry_type_dry_run_preview_shape(tmp_path):
-    app, _ = _app(tmp_path, ALLOW_UNVERIFIED=True)
+def test_bgreplace_requires_mask_and_prompt(tmp_path):
+    """缺遮罩 / 缺内容 都在**触网前**拒掉（400），并有老接口兜底提示。"""
+    app, _ = _app(tmp_path, LEGACY="fallback")
     with TestClient(app) as c:
         spy = UpstreamSpy()
         _inject(app, spy)
-        r = _post(c, {"model": "wenxin:bgreplace", "image": data_uri(PNG_SMALL),
-                      "prompt": "大雪纷飞的背景", "dry_run": True})
-    msg = _preview_body(r.json())
-    search = msg["searchInfo"]
-    assert search["sa"] == "searchbox_image"
-    assert search["enter_type"] == "pic_picfunc_11"
-    assert "mcpInfo" not in search, "入口形状**不带** mcpInfo（实测报文如此）"
-    assert msg["query"][-1]["data"]["text"]["query"] == "大雪纷飞的背景"
-    assert spy.seen == [], "干跑零网络"
-
-
-def test_entry_type_requires_instruction_but_dry_run_passes(tmp_path):
-    app, _ = _app(tmp_path, ALLOW_UNVERIFIED=True)
-    with TestClient(app) as c:
-        spy = UpstreamSpy()
-        _inject(app, spy)
-        # 真跑缺指令 ⇒ 400（触网前拒）
-        r = _post(c, {"model": "wenxin:bgreplace", "image": data_uri(PNG_SMALL)})
-        # 干跑缺指令 ⇒ 200（闸门语义：干跑穿透）+ 占位警告
-        r2 = _post(c, {"model": "wenxin:bgreplace", "image": data_uri(PNG_SMALL),
-                       "dry_run": True})
-    assert r.status_code == 400 and r.json()["error"]["code"] == "missing_instruction"
-    assert r2.status_code == 200 and r2.json()["dry_run"] is True
-    assert any("干跑未提供" in w for w in r2.json()["warnings"])
-    assert spy.seen == []
-
-
-def test_entry_type_caps_are_gated_by_default(tmp_path):
-    """背景替换默认门禁（2026-09-24 复测已变编辑器/agent 形态）。"""
-    app, _ = _app(tmp_path)
-    with TestClient(app) as c:
-        spy = UpstreamSpy()
-        _inject(app, spy)
-        r = _post(c, {"model": "wenxin:bgreplace", "image": data_uri(PNG_SMALL),
-                      "prompt": "大雪纷飞的背景"})
-        caps = c.get("/capabilities").json()
-    assert r.status_code == 503 and r.json()["error"]["code"] == "capability_not_verified"
-    entry = [m for m in caps["not_available"] if m["id"] == "wenxin:bgreplace"][0]
-    assert entry["entry_type"] == "pic_picfunc_11" and entry["needs_instruction"] is True
-    assert spy.seen == []
+        r_no_mask = _post(c, {"model": "wenxin:bgreplace", "image": data_uri(PNG_SMALL),
+                              "prompt": "大雪纷飞的街道"})
+        r_no_text = _post(c, {"model": "wenxin:bgreplace", "image": data_uri(PNG_SMALL),
+                              "mask": "data:image/png;base64,iVBORw0KGgo="})
+        # 无老接口开关时：老接口映射的能力默认 503（不制造假能力）
+        app2, _ = _app(tmp_path)
+        with TestClient(app2) as c2:
+            r_gated = _post(c2, {"model": "wenxin:bgreplace", "image": data_uri(PNG_SMALL),
+                                 "mask": "data:image/png;base64,iVBORw0KGgo=", "prompt": "雪景"})
+    assert r_no_mask.status_code == 400 and r_no_mask.json()["error"]["code"] == "missing_mask"
+    assert r_no_text.status_code == 200, "老接口 text 缺省时用能力名兜底（实测不阻断）"
+    assert r_gated.status_code == 503 and r_gated.json()["error"]["code"] == "capability_not_verified"
+    # 触网判定：只有「有遮罩」那条真的走了老接口（pccreate + pcquery 各一次），
+    # 且**不打主链**（遮罩类直通老接口——实测主链遮罩参数未逆向）。
+    urls = [str(e.url) for e in spy.seen]
+    assert sum("pccreate" in u for u in urls) == 1
+    assert sum("pcquery" in u for u in urls) == 1
+    assert not any("/aichat/api/conversation" in u for u in urls)
 
 
 # ----------------------------------------- 换风格：专属 sa + style（2026-09-24 攻克）

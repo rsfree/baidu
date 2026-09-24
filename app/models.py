@@ -98,14 +98,9 @@ class Capability:
     legacy_uses_prompt: bool = False
     #: 该能力需要遮罩（黑底白框；老接口 picInfo2）
     requires_mask: bool = False
-    #: **工具入口码**（主链 UI 实测）：设置后 `build_body` 改用「工具入口形状」
-    #: （`sa=searchbox_image` + `enter_type=<码>` + **无 mcpInfo**）—— 2026-09-24 实测：
-    #: UI 点「风格转换」落在 `enter_type=pic_picfunc_14`、「背景替换」= `pic_picfunc_11`；
-    #: 而旧形状（`workspace_piccreate_14`）如今只回`picEditBaseUrl`（跳编辑器），不出图。
+    #: 工具入口码（站点 UI 实测）：即 `searchInfo.enter_type` 的取值（如换风格 = `pic_picfunc_14`）；
+    #: 2026-09-24 实测：UI 点「风格转换」落在 `enter_type=pic_picfunc_14`、「背景替换」= `pic_picfunc_11`。
     entry_type: str | None = None
-    #: 工具入口形状下，**调用方的 `prompt` 就是指令文本**（背景描述）——
-    #: 实测：UI 第一轮只发图 + 入口码（助手回"你想换成什么背景"），第二轮用**自然语言**给描述。
-    needs_instruction: bool = False
     #: **workspace 形状的 `sa` 覆写**：个别工具用专属字母码（实测：换风格 = `workspace_piccreate_hfg`，
     #: 而不是 `workspace_piccreate_<tt>`）。设置后 `build_body` 用它，并带 `image_source=1`。
     workspace_sa: str | None = None
@@ -166,15 +161,17 @@ CAPABILITIES: dict[str, Capability] = {
     "wenxin:bgreplace": Capability(
         name="wenxin:bgreplace", title="背景替换",
         tool_type="11", verified=False,
-        entry_type="pic_picfunc_11", needs_instruction=True,
+        # ⚠️ 主链形态不可用（workspace 回「未识别到主体」、入口形状只回对话），
+        # 但**老接口 type=12 + 遮罩 + text 实测出图** ⇒ 与 erase/replace 同构的兜底通路。
+        legacy_type="12", requires_mask=True, legacy_uses_prompt=True,
         evidence=(
-            "枚举期（§3）出图 ✅；**2026-09-24 复测：workspace 形状回「未识别到主体」**，"
-            "工具入口形状（sa=searchbox_image + enter_type=pic_picfunc_11）只回对话文字与追问"
-            "（两轮亦不出图，帧内无 image-generate）⇒ 与「去水印」同类的**编辑器/agent 形态**。"
-            "老接口 type=12 已死：7 次尝试（两种端点 × 两种输入形态）create 恒被拒（status 5）"
+            "枚举期（§3）主链出图 ✅，**2026-09-24 复测主链已不可用**（workspace 形状回"
+            "「未识别到主体」；工具入口形状只回对话文字）。**老接口 `type=12` + `picInfo2`(遮罩) + "
+            "`text` ⇒ 实测出图**（全白遮罩 92KB、上半框遮罩 76KB，900x600）——"
+            "此前 7 次失败全因**没带遮罩**（站点 UI 该工具面板也正是「识别背景/涂抹要替换区域 + "
+            "输入替换的内容」）。老接口面板语义与「消除/局部替换」一致：黑底白框，白色=要处理的区域"
         ),
-        notes="要交付需逆向编辑器（picEditUrl）或 agent 多轮流程；"
-              "试跑请设 BAIDU_ALLOW_UNVERIFIED=1（形状已按 UI 实测接好）",
+        notes="需 `mask`（要替换的区域）+ `prompt`（替换成什么，→ 老接口 `text`）",
     ),
     "wenxin:restyle": Capability(
         name="wenxin:restyle", title="换风格",
