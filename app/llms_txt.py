@@ -157,8 +157,13 @@ def render(settings: Settings) -> str:
     add("- **老接口入参体积**：`type=1`（去水印）实测 600×400/39.9KB 收单、800×533/63.2KB 被拒 ⇒")
     add(f"  本服务**超限自动等比压缩**（当前上限 {settings.LEGACY_MAX_IMAGE_SIDE}px / "
         f"{settings.LEGACY_MAX_IMAGE_BYTES}B），压缩前后在 `upstream.legacy.fitted` 与 `warnings[]` 里如实给出。")
-    add("- **老接口频率**：短时间连发（实测约数十次）会得到「无任务号、无 resType」的拒单 ⇒ 请节流重试；")
-    add("  本服务自身有节流（`BAIDU_MIN_INTERVAL`）与闸门，正常经本服务调用不会这么快。")
+    add("- **老接口频率/身份**：短时间连发（实测约数十次）会触发反爬标记"
+        "（响应形如 `{'antiFlag': 1, 'message': 'Forbid spider access'}`，**没有 status 键**）。实测三维对照："
+        "标记**粘在身份（cookie）上**、**会自愈**（约 10~15 分钟）、而**出口 IP 不是维度**。")
+    add(f"  ⇒ 本服务已**自动兼容**：遇拒单会现场铸一个新匿名身份并重试一次，铸到后缓存复用"
+        f"（当前 `BAIDU_ROTATE_COOKIE_ON_BURN={int(bool(settings.ROTATE_COOKIE_ON_BURN))}`，"
+        f"`/readyz.checks.legacy_limits` 可见）；换身份过程写在 `upstream.legacy.identity_rotated` 与 `warnings[]`。"
+        f"本服务自身另有节流（`BAIDU_MIN_INTERVAL`）与闸门，正常经本服务调用不会这么快。")
     add("- **结果图取回**：上游结果 CDN 偶发慢（实测 38~47s）⇒ 已加超时 + 重试"
         f"（`BAIDU_RESULT_FETCH_TIMEOUT={settings.RESULT_FETCH_TIMEOUT:g}` / "
         f"`BAIDU_RESULT_FETCH_RETRIES={settings.RESULT_FETCH_RETRIES}`）。")
