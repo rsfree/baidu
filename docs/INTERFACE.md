@@ -13,6 +13,7 @@
 |---|---|---|---|
 | `POST` | `/v1/images/generations` | ✅ Key | **执行端点**（图进图出；唯一语义入口） |
 | `GET` | `/v1/models` | 🔓 免 | 能力清单（OpenAI 四键形态；**只列本部署可用**） |
+| `GET` | `/llms.txt` | 🔓 免 | **给 LLM/Agent 的服务说明书**（llmstxt.org 约定，`text/markdown`）——内容**从注册表派生**（能力表/必填输入/通路/本部署可用性/风格表/错误码），不随能力变更漂移 |
 | `GET` | `/capabilities` | ✅ Key | 全量能力 + 未取证项的**原因与开启方式** + 老接口映射 + 刻意缺席 |
 | `GET` | `/healthz` `/readyz` | 🔓 免 | 存活 / 就绪（运维面，无凭据原文） |
 | `GET` | `/stats` | ✅ Key | 闸门快照 + 最近 50 条 span |

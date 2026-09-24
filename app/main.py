@@ -22,7 +22,7 @@ from typing import Annotated, Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, Header, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
@@ -30,6 +30,7 @@ from . import __version__
 from .config import Settings, get_settings
 from .errors import UPSTREAM_KIND_STATUS, ApiError, UpstreamError
 from .gate import RateGate, RiskWindow
+from .llms_txt import render as render_llms_txt
 from .models import (
     ACCEPTS,
     CAPABILITIES,
@@ -230,6 +231,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 for name in sorted(caps)
             ],
         }
+
+    @app.get("/llms.txt", include_in_schema=False)
+    async def llms_txt(request: Request) -> PlainTextResponse:
+        """给 LLM / Agent 的服务说明书（llmstxt.org 约定）——**免鉴权**。
+
+        内容**从注册表派生**（能力表 / 必填输入 / 通路 / 本部署可用性 / 风格表 / 错误码），
+        所以不会随能力变更而漂移。
+        """
+        settings: Settings = request.app.state.settings
+        return PlainTextResponse(render_llms_txt(settings),
+                                 media_type="text/markdown; charset=utf-8")
 
     @app.get("/capabilities")
     async def capabilities(request: Request,

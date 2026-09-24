@@ -49,6 +49,14 @@ done
 curl -sf "$BASE/healthz" >/dev/null || { echo "服务没起来；日志：/tmp/baidu_smoke_app.log"; exit 1; }
 echo "   healthz ok"
 
+# /llms.txt：免鉴权 + 内容从注册表派生（能力逐条在册）
+LLMS=$(curl -sf "$BASE/llms.txt") || { echo "   ❌ /llms.txt 拉不到"; exit 1; }
+printf '%s' "$LLMS" | grep -q "# baidu-service" || { echo "   ❌ /llms.txt 头不对"; exit 1; }
+for M in wenxin:clarity wenxin:restyle wenxin:bgreplace; do
+  printf '%s' "$LLMS" | grep -q "\`$M\`" || { echo "   ❌ /llms.txt 缺能力 $M"; exit 1; }
+done
+echo "   llms.txt ok（免鉴权，能力表在册）"
+
 "$PY" - "$BASE" "$MOCK_PORT" <<'PY'
 import base64, json, sys, urllib.error, urllib.request
 

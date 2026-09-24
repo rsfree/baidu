@@ -1,7 +1,7 @@
 # baidu-service
 
 **文心助手**（`wenxin.baidu.com` / 后端 `chat.baidu.com`）图片编辑的**同步出口**：
-19 项能力、图进图出、一条 `POST` 拿到结果。工程骨架参考 `../textin` / `../jimeng`。
+19 项能力、图进图出、一条 `POST` 拿到结果；`GET /llms.txt` 给 LLM 的自述说明书。工程骨架参考 `../textin` / `../jimeng`。
 
 ```bash
 # 1) 铸造匿名身份（免登录、零生成请求；在 reverse-proxy 仓）
