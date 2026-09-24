@@ -611,9 +611,11 @@ class BaiduClient:
                     "老接口 pccreate 返回非 JSON",
                     detail={"http_status": r_status, "body_head": r_text_head},
                 )
-            # 🔑 被拉黑（无任务号 + 无 resType）⇒ 换一个**新匿名 cookie** 重试一次
+            # 🔑 被拉黑 ⇒ 换一个**新匿名 cookie** 重试一次。
+            # 判据＝「无任务号 且 无 resType」——**不要要求 status==0**：
+            # 实测反爬报文长这样 `{"antiFlag": 1, "message": "Forbid spider access"}`（压根没有 status 键）。
             if (attempt == 1 and self._s.ROTATE_COOKIE_ON_BURN
-                    and created.get("status") == 0 and not created.get("pcEditTaskid")
+                    and not created.get("pcEditTaskid")
                     and created.get("resType") is None):
                 try:
                     cookie = await self.mint_anonymous_cookie(base)
@@ -636,8 +638,10 @@ class BaiduClient:
                         f"≤{self._s.LEGACY_MAX_IMAGE_SIDE}px / {self._s.LEGACY_MAX_IMAGE_BYTES}B；"
                         "若仍被拒请换更小或更规整的图，或改用主链能力")
             elif res_type is None:
-                hint = ("响应里既无任务号也无 resType —— 该 cookie 疑似被拉黑（本服务会**自动换新匿名身份重试一次**；"
-                        "若已重试仍失败，多半是瞬时频控，稍后重试即可）")
+                waf = bool(created.get("antiFlag")) or "spider" in str(created.get("message", "")).lower()
+                hint = (("该身份被**反爬标记**（antiFlag / Forbid spider access）——" if waf else
+                         "响应里既无任务号也无 resType —— 该身份疑似被拉黑（")
+                        + "本服务会**自动铸新匿名身份并重试一次**；若重试后仍失败，请稍后再试）")
             else:
                 hint = f"resType={res_type}（未知拒法）：请把该输入留档反馈，便于补进边界表"
             raise UpstreamUnavailableError(

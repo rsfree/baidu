@@ -139,18 +139,21 @@ def test_legacy_refusal_messages_are_actionable():
     两类实测拒法：`resType=2`（入参体积/内容）与「无任务号且无 resType」（疑似限流）。
     """
 
-    def make(handler_body):
+    def handler_of(handler_body):
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url.path.endswith("/aigc/pccreate"):
                 return httpx.Response(200, json=handler_body)
             return httpx.Response(200, json={})          # pcquery 用不到（create 就拒了）
 
-        return _client(handler)
+        return handler
 
     for body, expect in (({"status": 0, "resType": 2}, "入参体积"),
-                         ({"status": 0, "resType": None}, "自动换新匿名身份"),
+                         ({"status": 0, "resType": None}, "自动铸新匿名身份"),
+                         ({"antiFlag": 1, "message": "Forbid spider access"}, "反爬标记"),
                          ({"status": 0, "resType": 9}, "未知拒法")):
-        c = make(body)
+        c = BaiduClient(Settings(_env_file=None, COOKIE="BAIDUID=x",
+                                 ROTATE_COOKIE_ON_BURN=False),   # 关轮换：单测文案本身
+                        transport=httpx.MockTransport(handler_of(body)))
         with pytest.raises(UpstreamUnavailableError) as ei:
             arun(c.legacy_process("1", b"\x89PNG\r\n\x1a\n" + b"0" * 32))
         arun(c.aclose())
@@ -176,7 +179,8 @@ def test_burned_cookie_triggers_identity_rotation():
             seen.append(request.headers.get("cookie", ""))
             state["creates"] += 1
             if state["creates"] == 1:
-                return httpx.Response(200, json={"status": 0})       # 被拉黑：无任务号、无 resType
+                # 实测的反爬形态：**没有 status 键**（旧判据要求 status==0 ⇒ 漏判过）
+                return httpx.Response(200, json={"antiFlag": 1, "message": "Forbid spider access"})
             return httpx.Response(200, json={"status": 0, "pcEditTaskid": "T1", "resType": 0})
         if request.url.path.endswith("/aigc/pcquery"):
             return httpx.Response(200, json={"progress": 100, "picArr": [
