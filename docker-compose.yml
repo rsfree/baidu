@@ -1,0 +1,27 @@
+name: baidu-service
+
+services:
+  baidu:
+    build: .
+    image: baidu-service:0.1.0
+    env_file: .env
+    environment:
+      # 宿主端口以 BAIDU_PORT 为准（默认 8700）。
+      BAIDU_PORT: "${BAIDU_PORT:-8700}"
+    ports:
+      - "${BAIDU_PORT:-8700}:${BAIDU_PORT:-8700}"
+    restart: unless-stopped
+    volumes:
+      # 结果镜像目录（response_format=url 时落盘；不设 TTL，由部署方清理）。
+      - baidu-media:/srv/var/media
+    # 无数据库：本服务是**同步**翻译层，没有任务状态需要持久化。
+    # ⚠️ 也不要把 workers 提到 1 以上：速率闸门/冷却窗是进程内状态。
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8700/healthz', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  baidu-media:

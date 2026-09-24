@@ -1,0 +1,11 @@
+# 静态门禁：只收能拦出线上级缺陷的规则，刻意不收风格规则 ——
+# 一次报上百条的门禁等于没有门禁（与 textin / jimeng / pavo 同源）。
+line-length = 100
+target-version = "py313"
+
+[lint]
+select = ["F", "E9", "BLE", "S110", "PLC0415", "SLF001"]
+
+[lint.per-file-ignores]
+"tests/*" = ["SLF001"]
+"scripts/*" = ["SLF001"]

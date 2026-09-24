@@ -1,0 +1,17 @@
+# 运行期依赖 —— 刻意保持最小面（与 textin / jimeng 同源约定）。
+# HTTP 栈只留 httpx：少一类超时语义 / 连接池 / trust_env 的行为差异；
+# SSE 流式读取用 httpx 的 aiter_lines（requests 做不到 async 流）。
+fastapi>=0.115
+uvicorn>=0.30
+gunicorn>=22.0
+# gunicorn 的 ASGI worker 必须用这个独立包：uvicorn 自带的 workers 已弃用。
+uvicorn-worker>=0.3
+httpx>=0.27
+pydantic>=2.7
+pydantic-settings>=2.2
+# 日志（与兄弟服务同源）；可观测性 SDK 在 requirements-otel.txt（可选）
+loguru>=0.7
+# 图像标准化（仅 BOS 转存路径用：限最长边 ≤2048 / 压到 ≤2MB / 统一标准 MIME）。
+# 这是上游抓取外链失败的两个已知诱因（体积、非标 Content-Type），
+# 见 docs/UPSTREAM.md §6；跳过的开关是 BAIDU_NORMALIZE=0。
+pillow>=10.0

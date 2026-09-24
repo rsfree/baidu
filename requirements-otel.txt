@@ -1,0 +1,4 @@
+# 可选：接 logfire 出 trace。**必须带 [fastapi] extra** ——
+# 只写 `logfire` 的话 instrument_fastapi() 会抛 RuntimeError，而被宽 except 兜住 ⇒
+# "服务照常跑，但一条 span 都没有"。未安装时 observability.setup() 只打一行 INFO。
+logfire[fastapi]>=3.0

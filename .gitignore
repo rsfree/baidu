@@ -1,0 +1,16 @@
+# 凭据与运行期产物：一律不入库。
+# ⚠️ BAIDU_COOKIE 是真实凭据（百度系 cookie），泄露等于把出口身份交出去。
+.env
+.env.*
+!.env.example
+var/
+*.log
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+venv/
+.venv/
+
+# 项目记忆（不进公开仓）
+.workbuddy/
