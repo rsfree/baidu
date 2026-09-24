@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     RESULT_FETCH_TIMEOUT: float = 60.0
     #: **结果图取回**重试次数（只重试瞬时错误：超时/网络/5xx/429；4xx 与超限不重试）。
     RESULT_FETCH_RETRIES: int = 2
+
+    #: 老接口（image.baidu.com/aigc）**入参上限**：长边像素 / 字节。超限则自动等比压缩后再提交。
+    #: 依据（2026-09-24 实测 type=1）：600×400 / 39.9KB 收单；800×533 / 63.2KB 与 900×600 / 73.3KB 被拒（resType=2）。
+    #: 同一时刻 type=3 用同一张大图收单 ⇒ 差异在**入参体积**，不在链路。
+    LEGACY_MAX_IMAGE_SIDE: int = 640
+    LEGACY_MAX_IMAGE_BYTES: int = 40000
     # 上游 SSE 总超时：变清晰实测 5.5s、提线稿 20~25s，另加转存与结果下载 ⇒ 180s 留足。
     TIMEOUT: float = 180.0
 

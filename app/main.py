@@ -191,6 +191,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "upload_mode": s.UPLOAD_MODE,
             "strip_watermark": s.STRIP_WATERMARK,
             "result_fetch": {"timeout_s": s.RESULT_FETCH_TIMEOUT, "retries": s.RESULT_FETCH_RETRIES},
+            "legacy_limits": {"max_side": s.LEGACY_MAX_IMAGE_SIDE,
+                              "max_bytes": s.LEGACY_MAX_IMAGE_BYTES},
             "legacy": {"mode": s.LEGACY, "base": s.LEGACY_BASE if legacy else None},
             "proxy_pool": client.masked_proxies(),
             "risk_window": _risk(request).snapshot(),

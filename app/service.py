@@ -424,6 +424,14 @@ async def run(
 
     # ---- 8) 装配（唯一出口）----
     if legacy_used:
+        _fitted = (legacy_info or {}).get("fitted")
+        if _fitted:
+            warnings.append(
+                f"输入已按老接口实测上限自动等比压缩："
+                f"{_fitted['from_size'][0]}x{_fitted['from_size'][1]} → "
+                f"{_fitted['to_size'][0]}x{_fitted['to_size'][1]}"
+                f"（{_fitted['bytes_in']} → {_fitted['bytes_out']} 字节）——"
+                "老接口对入参体积敏感（实测 40KB 收 / 63KB 拒），需要原分辨率请走主链能力")
         effective["path"] = "legacy"
         items = [_deliver_one(settings, legacy_raw or b"", response_format)]
         strip_notes = False

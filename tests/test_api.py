@@ -7,10 +7,13 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
+import os
 from typing import Any
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.main import create_app
 from app.models import CAPABILITIES
@@ -589,6 +592,41 @@ def test_index_is_public_landing_page(tmp_path):
     # 计数与注册表一致（不许写死）
     assert f"{len(CAPABILITIES)} 项能力" in body, body[:200]
     assert "鉴权" in body
+
+
+def test_legacy_large_input_is_auto_downscaled(tmp_path):
+    """老接口入参超限 ⇒ **自动等比压缩**并如实告警（不再直接失败）。
+
+    依据（2026-09-24 实测）：type=1 在 600×400/39.9KB 收单、800×533/63.2KB 被拒 ⇒
+    服务端把大图压到 `LEGACY_MAX_IMAGE_*` 以内再提交，并在 `warnings` 里说明。
+    """
+    app, _ = _app(tmp_path, LEGACY="fallback")     # erase 走老接口（requires_mask ⇒ 直通）
+    buf = io.BytesIO()
+    Image.frombytes("RGB", (1200, 900), os.urandom(1200 * 900 * 3)).save(buf, "PNG")
+    big = base64.b64encode(buf.getvalue()).decode()
+    assert len(buf.getvalue()) > 40000, "夹具必须是**超限**的大图"
+    with TestClient(app) as c:
+        spy = UpstreamSpy()
+        _inject(app, spy)                          # 假上游（测试禁止真实网络）
+        r = _post(c, {"model": "wenxin:erase", "image": "data:image/png;base64," + big,
+                      "mask": data_uri(helpers_size_mask())})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    fitted = (body.get("upstream", {}).get("legacy") or {}).get("fitted")
+    assert fitted, "必须记录压缩前后（不许静默变形）"
+    assert fitted["to_size"][0] <= 640 and fitted["bytes_out"] <= 40000, fitted
+    assert any("自动等比压缩" in w for w in body["warnings"]), body["warnings"]
+    # 上游真收到的是**缩后**的图（不是原图）—— 用 spy 记录的提交表单核对
+    sent = spy.legacy_forms[-1]
+    got = len(sent["picInfo"]) * 3 // 4
+    assert got <= 40000, f"上游收到 {got} 字节，未压缩？"
+
+
+def helpers_size_mask() -> bytes:
+    """一张与被缩后尺寸无关的合法遮罩（服务端会按需自行适配）。"""
+    b = io.BytesIO()
+    Image.new("RGB", (1200, 900), (255, 255, 255)).save(b, "PNG")   # 全白=全图处理
+    return b.getvalue()
 
 
 def test_readyz_exposes_result_fetch_knobs(tmp_path):

@@ -26,6 +26,7 @@ import asyncio
 import base64
 import contextlib
 import hashlib
+import io
 import itertools
 import json
 import time
@@ -34,6 +35,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable
 
 import httpx
 from loguru import logger
+from PIL import Image
 
 from ...config import Settings, get_settings
 from ...errors import (
@@ -65,6 +67,49 @@ _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 
 #: 代取/结果下载的独立超时（与上游处理超时无关）。
 _FETCH_TIMEOUT = 30.0
+
+
+def fit_legacy_image(data: bytes, *, max_side: int, max_bytes: int
+                     ) -> tuple[bytes, dict[str, Any] | None]:
+    """把**老接口入参**缩到实测可接受的范围（只在超限时动；非图片或缩不动则原样返回）。
+
+    依据（2026-09-24 实测，`type=1` 去水印，全部 base64 直传、同一条链路）：
+    **600×400 / 39.9KB ⇒ 收单；800×533 / 63.2KB、900×600 / 73.3KB ⇒ `resType=2` 拒**。
+    同一时刻 `type=3` 用同一张大图收单 ⇒ 不是链路/cookie 问题，是**入参体积**。
+    ⇒ 服务端自动兼容：超限先等比压缩，保证"大图不再直接失败"。
+    """
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            w, h = im.size
+            long_side = max(w, h)
+            need = long_side > max_side or len(data) > max_bytes
+            if not need:
+                return data, None
+            scale = min(1.0, max_side / long_side) if long_side else 1.0
+            cur = im.convert("RGB")
+            if scale < 1.0:
+                cur = cur.resize((max(1, int(w * scale)), max(1, int(h * scale))),
+                                 Image.LANCZOS)
+            for quality in (85, 75, 65, 55, 45):
+                buf = io.BytesIO()
+                cur.save(buf, "JPEG", quality=quality, optimize=True)
+                out = buf.getvalue()
+                if len(out) <= max_bytes:
+                    break
+            else:                                # 压到最低质量仍超限 ⇒ 继续缩尺寸（有界）
+                for _ in range(3):
+                    cur = cur.resize((max(1, cur.width * 4 // 5), max(1, cur.height * 4 // 5)),
+                                     Image.LANCZOS)
+                    buf = io.BytesIO()
+                    cur.save(buf, "JPEG", quality=65, optimize=True)
+                    out = buf.getvalue()
+                    if len(out) <= max_bytes:
+                        break
+            meta = {"from_size": [w, h], "to_size": [cur.width, cur.height],
+                    "bytes_in": len(data), "bytes_out": len(out)}
+            return out, meta
+    except (OSError, ValueError):                # 不是图片 / 解不开 ⇒ 原样交给上游去报错
+        return data, None
 
 
 class Credentials:
@@ -505,6 +550,10 @@ class BaiduClient:
         import base64 as _b64  # noqa: PLC0415
 
         base = self._s.LEGACY_BASE.rstrip("/")
+        # 老接口对入参体积敏感（实测 40KB 收 / 63KB 拒）⇒ 超限先等比压缩，别让调用方踩
+        data, fitted = fit_legacy_image(data,
+                                       max_side=self._s.LEGACY_MAX_IMAGE_SIDE,
+                                       max_bytes=self._s.LEGACY_MAX_IMAGE_BYTES)
         form = legacy_form(
             legacy_type, _b64.b64encode(data).decode("ascii"),
             ext_ratio=ext_ratio, create_level=create_level,
@@ -516,6 +565,8 @@ class BaiduClient:
             "type": str(legacy_type), "bytes_in": len(data),
             "has_mask": bool(mask), "create_level": str(create_level or ""),
         }
+        if fitted:
+            info["fitted"] = fitted
 
         async with self._session() as client:
             try:
