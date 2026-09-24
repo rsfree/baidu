@@ -193,6 +193,8 @@ class BaiduClient:
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._s = settings or get_settings()
+        #: 铸到的匿名身份（被拉黑时才铸；铸到后复用，别每请求重铸）
+        self._minted: str = ""
         #: 测试注入的假传输：**只在无代理路径使用**（见类文档 🔴）。
         self._transport = transport
         self._proxies = [p.strip() for p in self._s.PROXY_POOL.split(",") if p.strip()]
@@ -532,20 +534,32 @@ class BaiduClient:
 
         实测（2026-09-24）：老接口的频控**粘在 cookie 上**（同一 cookie 冷却 15 分钟后仍拒），
         而**换一个新匿名 cookie、同一个出口 IP 立刻收单** ⇒ 这是本服务的"换身份"杠杆。
+
+        ⚠️ 偶发"首页没下发 cookie"（WAF 拦截页）⇒ 退避后**重试一次**；铸到后**缓存复用**
+        （同一身份在失效前一直用，别每请求重铸）。
         """
-        async with self._session() as client:
-            r = await client.get(f"{base}/", headers={"User-Agent": _UA}, timeout=30)
-        parts: list[str] = []
-        for raw_cookie in r.headers.get_list("set-cookie"):
-            name = raw_cookie.split("=", 1)[0].strip()
-            if name in ("BAIDUID", "BIDUPSID", "BAIDUID_BFESS", "PSTM"):
-                parts.append(raw_cookie.split(";", 1)[0].strip())
-        if not any(p.startswith("BAIDUID=") for p in parts):
-            raise UpstreamUnavailableError(
-                "铸匿名 cookie 失败：首页没有下发 BAIDUID",
-                detail={"status": r.status_code},
-            )
-        return "; ".join(parts)
+        if self._minted:
+            return self._minted
+        last: str = ""
+        for attempt in (1, 2):
+            async with self._session() as client:
+                r = await client.get(f"{base}/", headers={"User-Agent": _UA}, timeout=30)
+            parts: list[str] = []
+            for raw_cookie in r.headers.get_list("set-cookie"):
+                name = raw_cookie.split("=", 1)[0].strip()
+                if name in ("BAIDUID", "BIDUPSID", "BAIDUID_BFESS", "PSTM"):
+                    parts.append(raw_cookie.split(";", 1)[0].strip())
+            if any(p.startswith("BAIDUID=") for p in parts):
+                self._minted = "; ".join(parts)
+                return self._minted
+            last = f"HTTP {r.status_code}；set-cookie 头 {len(r.headers.get_list('set-cookie'))} 条"
+            if attempt == 1:
+                logger.warning(f"铸匿名 cookie 未拿到 BAIDUID（{last}），1.5s 后重试一次")
+                await asyncio.sleep(1.5)
+        raise UpstreamUnavailableError(
+            f"铸匿名 cookie 失败：首页没有下发 BAIDUID（{last}）—— 多为瞬时 WAF 拦截，稍后重试即可",
+            detail={"status": last},
+        )
 
     def _legacy_headers(self, cookie: str | None = None) -> dict[str, str]:
         """老接口（`image.baidu.com`）的出站头：表单提交 + 同款 cookie。
