@@ -49,7 +49,7 @@
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `model` | ✅ | `wenxin:<name>`（19 项，见 §7）；未注册名（含已撤的 `wenxin:reimagine`）⇒ 400 `unknown_model` |
+| `model` | ✅ | `wenxin:<name>`（19 项，见 §7）；未注册名（含已撤的 `wenxin:reimagine`）⇒ 400 `unknown_model`；**未取证项**（如 `wenxin:ps`）⇒ 503 `capability_not_verified` |
 | `image` | ✅ | **三种形态**：data URI / http(s) URL / 裸 base64。类型**按真实字节嗅探**（png/jpeg/webp/bmp；**GIF 不收**） |
 | `mask` | ❌ | **只有「消除 / 局部替换 / 背景替换」消费**（这两个能力**必填**，缺 ⇒ 400 `missing_mask`）：**黑底 + 白框**的图片，**白色标记「要处理的区域」**；形态同 `image`。其余能力给了 mask ⇒ 忽略 + `warnings[]` 明示 |
 | `style` | ❌ | **只有「换风格」消费**（**必填**，缺 ⇒ 400 `missing_style`；未知值 ⇒ 400 `unknown_style` 并回 17 项候选）：风格 **id**（如 `miyazaki`）或**中文标签**（如 `宫崎骏风`）。17 项见 `/capabilities` 的 `styles`；请求时 id 进 `ext.style`、标签进 `ext.text` 与 TEXT query |
@@ -148,7 +148,7 @@
 
 | 闸门 | 真跑 | dry_run | 说明 |
 |---|---|---|---|
-| 未取证能力（6 项） | 503 | ✅ 放行 | **全部**经老接口可用（去水印/消除/局部替换/背景替换/重绘/相似图）⇒ 开 `BAIDU_LEGACY` 后 **19/19 全可用** |
+| 未取证能力（9 项） | 503 | ✅ 放行 | 其中 **6 项**经老接口可用（去水印/消除/局部替换/背景替换/重绘/相似图）⇒ 开 `BAIDU_LEGACY` 后 **16/19 可用**；另 3 项（`ps`/`removeperson`/`matting-pro`）**无老接口映射**，2026-09-24 复验主链只回编辑器链接 ⇒ 仍门禁 |
 | 换风格缺/错 `style` | 400 | ✅ 放行 | 真跑缺 ⇒ `missing_style`（含 17 项候选）；干跑按首个风格预览 |
 | 工具入口形状缺指令（`restyle`/`bgreplace`） | 400 | ✅ 放行 | 真跑缺 `prompt` ⇒ `missing_instruction`；干跑按占位预览 |
 | 遮罩类缺 `mask` | 400 | ✅ 放行 | 必填字段校验在触网前；干跑只做计划 |

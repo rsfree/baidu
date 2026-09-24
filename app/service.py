@@ -623,7 +623,9 @@ async def _collect(
     for img in out.images:
         if not img.url:
             continue
-        raw, _ct = await client.fetch_url(img.url, max_bytes)
+        raw, _ct = await client.fetch_url(img.url, max_bytes,
+                                          timeout=settings.RESULT_FETCH_TIMEOUT or None,
+                                          retries=settings.RESULT_FETCH_RETRIES)
         item = _deliver_one(settings, raw, response_format, url_head=img.url)
         if "size" not in item and img.width and img.height:
             item["size"] = f"{img.width}x{img.height}"

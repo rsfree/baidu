@@ -22,7 +22,7 @@ from typing import Annotated, Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, Header, Request
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
@@ -30,6 +30,7 @@ from . import __version__
 from .config import Settings, get_settings
 from .errors import UPSTREAM_KIND_STATUS, ApiError, UpstreamError
 from .gate import RateGate, RiskWindow
+from .landing import render as render_landing
 from .llms_txt import render as render_llms_txt
 from .models import (
     ACCEPTS,
@@ -189,6 +190,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "credentials": client.creds.diagnostics(),   # 只有来源/次数，绝无凭据值
             "upload_mode": s.UPLOAD_MODE,
             "strip_watermark": s.STRIP_WATERMARK,
+            "result_fetch": {"timeout_s": s.RESULT_FETCH_TIMEOUT, "retries": s.RESULT_FETCH_RETRIES},
             "legacy": {"mode": s.LEGACY, "base": s.LEGACY_BASE if legacy else None},
             "proxy_pool": client.masked_proxies(),
             "risk_window": _risk(request).snapshot(),
@@ -231,6 +233,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 for name in sorted(caps)
             ],
         }
+
+    @app.get("/", include_in_schema=False)
+    async def index(request: Request) -> HTMLResponse:
+        """根路径落地页（**给人看**）。本服务是纯 API —— 裸 404 会被当成"打不开"。"""
+        settings: Settings = request.app.state.settings
+        return HTMLResponse(render_landing(settings))
 
     @app.get("/llms.txt", include_in_schema=False)
     async def llms_txt(request: Request) -> PlainTextResponse:

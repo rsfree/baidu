@@ -33,6 +33,7 @@ import uuid
 from typing import Any, AsyncIterator, Awaitable, Callable
 
 import httpx
+from loguru import logger
 
 from ...config import Settings, get_settings
 from ...errors import (
@@ -268,17 +269,52 @@ class BaiduClient:
 
     # ------------------------------------------------------------------ 外链/结果取回
 
-    async def fetch_url(self, url: str, max_bytes: int) -> tuple[bytes, str | None]:
-        """代取调用方给的输入 / 取回上游结果（有硬字节上限）。
+    @staticmethod
+    def _fetch_retryable(exc: Exception) -> bool:
+        """该错误值不值得重试 —— **只重试瞬时类**：
 
-        预检 `Content-Length` + 读流封顶双保险；取不到就显式失败，
-        **绝不把半个文件当完整内容用**。
+        · 超时（跨境取上游结果 CDN 偶发慢，2026-09-24 实测一天 2 次）
+        · 网络错误（无 http_status）
+        · HTTP 5xx / 429
+        不重试：4xx、`content_too_large`（重试只会重复失败且更慢）。
+        """
+        if isinstance(exc, UpstreamTimeout):
+            return True
+        if isinstance(exc, UpstreamUnavailableError):
+            s = exc.http_status
+            return s is None or s >= 500 or s == 429
+        return False
+
+    async def fetch_url(self, url: str, max_bytes: int, *,
+                        timeout: float | None = None, retries: int = 0) -> tuple[bytes, str | None]:
+        """代取调用方给的输入 / 取回上游结果（有硬字节上限 + **瞬时错误重试**）。
+
+        `retries` 只对瞬时错误生效（见 `_fetch_retryable`），退避 0.5s/1s/2s…
+        —— 上游结果 CDN 跨境偶发慢时的 504 就是靠它消化的。
+        """
+        tries = max(0, int(retries))
+        for attempt in range(tries + 1):
+            try:
+                return await self._fetch_once(url, max_bytes, timeout)
+            except (UpstreamTimeout, UpstreamUnavailableError, ApiError) as exc:
+                if attempt >= tries or not self._fetch_retryable(exc):
+                    raise
+                delay = 0.5 * (2 ** attempt)
+                logger.warning(f"取回瞬时失败（{type(exc).__name__}: {exc}），"
+                               f"{delay:.1f}s 后重试 {attempt + 1}/{tries}（{url[:80]}）")
+                await asyncio.sleep(delay)
+        raise AssertionError("unreachable")           # pragma: no cover
+
+    async def _fetch_once(self, url: str, max_bytes: int,
+                          timeout: float | None = None) -> tuple[bytes, str | None]:
+        """单次取回（不做重试）。预检 `Content-Length` + 读流封顶双保险；
+        取不到就显式失败，**绝不把半个文件当完整内容用**。
         """
         declared_ct: str | None = None
         chunks: list[bytes] = []
         total = 0
         try:
-            async with self._client.stream("GET", url, timeout=_FETCH_TIMEOUT,
+            async with self._client.stream("GET", url, timeout=timeout or _FETCH_TIMEOUT,
                                            follow_redirects=True) as resp:
                 if resp.status_code >= 400:
                     raise UpstreamUnavailableError(

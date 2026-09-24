@@ -196,11 +196,11 @@ jobs:
           python3 -c "import json;d=json.load(open('/tmp/health.json'));assert d['version']=='$VERSION',d"
 
           curl -sf http://127.0.0.1:18700/readyz | tee /tmp/ready.json; echo
-          python3 -c "import json;d=json.load(open('/tmp/ready.json'));c=d['checks'];assert d['status']=='ok',d;assert c['cookie_configured'] is True,c;assert c['capabilities']=={'total':19,'available':19},c"
+          python3 -c "import json;d=json.load(open('/tmp/ready.json'));c=d['checks'];assert d['status']=='ok',d;assert c['cookie_configured'] is True,c;assert c['capabilities']=={'total':19,'available':16},c"
 
-          # 能力面：免鉴权 /v1/models 列**本部署可用**的 19 条（= 全部能力；老接口补位 6 项）
+          # 能力面：免鉴权 /v1/models 列**本部署可用**的 16 条（老接口补位 6 项；3 项无映射仍门禁）
           curl -sf http://127.0.0.1:18700/v1/models | tee /tmp/models.json; echo
-          python3 -c "import json;d=json.load(open('/tmp/models.json'));ids=[m['id'] for m in d['data']];assert len(ids)==19,len(ids);assert 'wenxin:dewatermark' in ids,ids;assert 'wenxin:restyle' in ids,ids;assert 'wenxin:bgreplace' in ids,ids"
+          python3 -c "import json;d=json.load(open('/tmp/models.json'));ids=[m['id'] for m in d['data']];assert len(ids)==16,len(ids);assert 'wenxin:dewatermark' in ids,ids;assert 'wenxin:restyle' in ids,ids;assert 'wenxin:bgreplace' in ids,ids;assert 'wenxin:ps' not in ids,ids"
 
           # /llms.txt：免鉴权 + 从注册表派生（跑在镜像里 = 顺带证明打包完整）
           curl -sf http://127.0.0.1:18700/llms.txt | tee /tmp/llms.txt | head -3

@@ -23,7 +23,9 @@ _LEGACY_ONLY = {"wenxin:redraw", "wenxin:similar"}
 
 #: 默认门禁（未取证）——8 项，含 2026-09-24 新判定的编辑器/agent 形态两条
 _GATED = {"wenxin:dewatermark", "wenxin:erase", "wenxin:replace",
-          "wenxin:redraw", "wenxin:similar", "wenxin:bgreplace"}
+          "wenxin:redraw", "wenxin:similar", "wenxin:bgreplace",
+          # 2026-09-24 复验：主链只回编辑器链接（8 类输入 18 次全失败）⇒ 撤出可用列表
+          "wenxin:ps", "wenxin:removeperson", "wenxin:matting-pro"}
 
 
 def test_registry_shape_and_tool_types():
@@ -42,8 +44,9 @@ def test_registry_shape_and_tool_types():
 def test_gated_set_is_exactly_the_documented_one():
     """未取证的能力集合 = 门禁对象；多一个/少一个都说明有人改了结论而没改这里。
 
-    6 项：去水印（编辑器件形态）＋ 消除/局部替换/背景替换（主链遮罩未逆向，走老接口）＋
-    AI重绘/相似图（legacy-only）—— **全都有老接口映射** ⇒ 开兜底后 19/19 全可用。
+    9 项：去水印（编辑器件形态）＋ 消除/局部替换/背景替换（主链遮罩未逆向，走老接口）＋
+    AI重绘/相似图（legacy-only，以上 6 项**都有老接口映射**，开兜底即可用）＋
+    **P图/去路人/背景抠图（2026-09-24 复验：主链只回编辑器链接，无老接口映射）** ⇒ 开兜底 16/19。
     ⚠️ 换风格**已攻克**（2026-09-24：抓到站点真实报文 ⇒ sa=workspace_piccreate_hfg + style/text + TEXT(标签) 出图）。
     """
     gated = {n for n, c in CAPABILITIES.items() if not c.verified}
@@ -77,7 +80,7 @@ def test_availability_gate_and_open():
     ok, reason = availability(cap, allow_unverified=False)
     assert not ok and "BAIDU_ALLOW_UNVERIFIED" in reason
     assert availability(cap, allow_unverified=True)[0]
-    assert len(available(allow_unverified=False)) == 13          # 20 - 7 门禁
+    assert len(available(allow_unverified=False)) == 10          # 19 - 9 门禁
     assert len(available(allow_unverified=True)) == 17           # 19 - 2 legacy-only
 
 
@@ -114,14 +117,20 @@ def test_absences_are_documented():
 def test_legacy_unlocks_exactly_the_mapped_capabilities():
     default = available(allow_unverified=False)
     with_legacy = available(allow_unverified=False, legacy=True)
-    assert len(default) == 13
-    # 13 已取证 + 6 有映射的未取证 = 19 ⇒ **开兜底后全部可用**
-    assert len(with_legacy) == 19 == len(CAPABILITIES)
+    assert len(default) == 10
+    # 10 已取证 + 6 有老接口映射的未取证 = 16（另 3 项无映射，开兜底也不可用）
+    assert len(with_legacy) == 16
     assert {"wenxin:dewatermark", "wenxin:erase", "wenxin:replace",
             "wenxin:redraw", "wenxin:similar", "wenxin:bgreplace"} <= set(with_legacy)
     assert "wenxin:restyle" in with_legacy               # 主链已攻克（与老接口兜底无关）
-    # 每个未取证能力都有老接口映射（无「永久门禁」残留）
-    assert all(lookup(n).legacy_type for n in _GATED if not lookup(n).legacy_only)
+    # 门禁集合 = 6 个「有老接口映射」（开兜底即可用）+ 3 个「无映射」（开兜底也不可用）
+    _mapped_gated = {n for n in _GATED if lookup(n).legacy_type}
+    _unmapped_gated = {n for n in _GATED if not lookup(n).legacy_type}
+    assert _mapped_gated == {"wenxin:dewatermark", "wenxin:erase", "wenxin:replace",
+                             "wenxin:redraw", "wenxin:similar", "wenxin:bgreplace"}
+    assert _unmapped_gated == {"wenxin:ps", "wenxin:removeperson", "wenxin:matting-pro"}, \
+        "无映射门禁项必须显式在册（2026-09-24 复验：主链只回编辑器链接）"
+    assert not (_unmapped_gated & set(with_legacy)), "无映射项**不得**因开兜底变可用"
 
 
 def test_legacy_type_registry_is_evidence_based():
@@ -136,10 +145,15 @@ def test_legacy_type_registry_is_evidence_based():
 
 
 def test_availability_reason_mentions_legacy_only_when_mapped():
-    # 所有未取证能力都有老接口映射 ⇒ 开启方式里必须提 BAIDU_LEGACY
+    # 开启方式必须**按是否有老接口映射**分别给对：有映射提 BAIDU_LEGACY，无映射只能提 ALLOW_UNVERIFIED
     for name in _GATED:
         cap = lookup(name)
-        assert "BAIDU_LEGACY" in availability(cap, allow_unverified=False)[1], name
+        reason = availability(cap, allow_unverified=False)[1]
+        if cap.legacy_type:
+            assert "BAIDU_LEGACY" in reason, name
+        else:
+            assert "BAIDU_LEGACY" not in reason, f"{name} 无映射，不该说开兜底可用"
+            assert "ALLOW_UNVERIFIED" in reason, name
     # 已取证能力不因兜底改变可用性
     assert availability(lookup("wenxin:clarity"), allow_unverified=False)[0]
     legacy_only = lookup("wenxin:redraw")

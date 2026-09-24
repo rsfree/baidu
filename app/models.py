@@ -152,12 +152,13 @@ CAPABILITIES: dict[str, Capability] = {
         )),
     "wenxin:matting-pro": Capability(
         name="wenxin:matting-pro", title="背景抠图",
-        **_verified_main(
-            "10", None,
-            evidence="§3 枚举实证（toolType 10 出图 ✅，与 9 同能力、不同模型入口）",
-            notes="与 wenxin:matting 同能力域；上游枚举回显名为「抠图」。"
-                  "老接口只有 type=9（同一能力域），未单独登记映射",
-        )),
+        tool_type="10", verified=False,
+        evidence=(
+            "§3 枚举期出图 ✅（与 9 同能力、不同模型入口）；**2026-09-24 复验不可用**："
+            "8 类输入（含人像/旅拍/extinfo 官方示例）18 次调用全部只回「编辑器链接」，无结果图。待复验再开"
+        ),
+        notes="背景抠图（toolType 10）。与 wenxin:matting 同能力域；当前主链只回编辑器链接；"
+              "老接口只有 type=9（同域），未单独登记映射"),
     "wenxin:bgreplace": Capability(
         name="wenxin:bgreplace", title="背景替换",
         tool_type="11", verified=False,
@@ -212,7 +213,12 @@ CAPABILITIES: dict[str, Capability] = {
         **_verified_main("20", None, evidence="§3 枚举实证（toolType 20 出图 ✅）")),
     "wenxin:removeperson": Capability(
         name="wenxin:removeperson", title="去路人",
-        **_verified_main("21", None, evidence="§3 枚举实证（toolType 21 出图 ✅）")),
+            tool_type="21", verified=False,
+        evidence=(
+            "§3 枚举期出图 ✅；**2026-09-24 复验不可用**：8 类输入 18 次调用全部只回「编辑器链接」，无结果图"
+            "（同批人像输入下 beauty 出图 ⇒ 非输入语义问题）。待复验再开"
+        ),
+        notes="去路人（toolType 21）。当前主链只回编辑器链接"),
     "wenxin:removetext": Capability(
         name="wenxin:removetext", title="去文字",
         **_verified_main("22", None, evidence="§3 枚举实证（toolType 22 出图 ✅）")),
@@ -224,7 +230,14 @@ CAPABILITIES: dict[str, Capability] = {
         **_verified_main("24", None, evidence="§3 枚举实证（toolType 24 出图 ✅）")),
     "wenxin:ps": Capability(
         name="wenxin:ps", title="P图",
-        **_verified_main("27", None, evidence="§3 枚举实证（toolType 27 出图 ✅）")),
+            tool_type="27", verified=False,
+        evidence=(
+            "§3 枚举期出图 ✅；**2026-09-24 复验不可用**：8 类输入（合成图 / 54×54 占位图 / 官方人像样图 / "
+            "旅拍样图 / extinfo 官方示例 ×6）**18 次调用全部只回「交互式编辑链接（picEditBaseUrl）」，"
+            "无结果图**（对照：同批人像输入下 `wenxin:beauty` 出图 25.6s ⇒ 排除「输入语义」这一解释）。"
+            "⇒ 疑似该 toolType 已转编辑器形态；**待上游恢复或找到适配输入后复验再开**"
+        ),
+        notes="P图（toolType 27）。当前主链只回编辑器链接；本服务不含无参透传的老接口映射"),
 
     # ---------------------------- 主链未取证、**老接口已实测**（mask 类两条，4 项）
     "wenxin:dewatermark": Capability(

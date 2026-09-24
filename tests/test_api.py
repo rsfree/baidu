@@ -13,6 +13,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.models import CAPABILITIES
 from app.upstream.baidu import BaiduClient
 from tests.helpers import (
     PNG_SMALL,
@@ -62,7 +63,7 @@ def test_readyz_reports_cookie_and_counts(tmp_path):
     checks = body["checks"]
     assert checks["cookie_configured"] is True
     assert checks["credentials"]["source"] == "explicit"
-    assert checks["capabilities"] == {"total": 19, "available": 13}
+    assert checks["capabilities"] == {"total": 19, "available": 10}
     assert checks["legacy"] == {"mode": "off", "base": None}
     assert checks["risk_window"]["cooling"] is False
     assert checks["proxy_pool"] == []
@@ -108,7 +109,8 @@ def test_models_lists_only_available(tmp_path):
     assert "wenxin:dewatermark" not in ids
     assert "wenxin:clarity" in ids and "wenxin:expand" in ids
     assert "wenxin:restyle" in ids and "wenxin:bgreplace" not in ids
-    assert len(ids) == 13
+    assert "wenxin:ps" not in ids, "9-24 复验不可用 ⇒ 不得出现在 /v1/models"
+    assert len(ids) == 10
 
 
 def test_models_includes_unverified_when_gate_open(tmp_path):
@@ -368,12 +370,13 @@ def test_legacy_unlocks_dewatermark_in_models(tmp_path):
     with TestClient(app) as c:
         ids = [m["id"] for m in c.get("/v1/models").json()["data"]]
         caps = c.get("/capabilities").json()
-    assert "wenxin:dewatermark" in ids and len(ids) == 19
+    assert "wenxin:dewatermark" in ids and len(ids) == 16
     dewater = [m for m in caps["models"] if m["id"] == "wenxin:dewatermark"][0]
     assert dewater["legacy_type"] == "1"
     assert caps["legacy"]["mode"] == "fallback"
-    # 未取证能力全部由老接口解锁 ⇒ 开兜底后不再有 not_available（不制造假能力）
-    assert caps["not_available"] == []
+    # 有老接口映射的都被解锁；**无映射的 3 项仍在 not_available**（不制造假能力）
+    assert {m["id"] for m in caps["not_available"]} == {
+        "wenxin:ps", "wenxin:removeperson", "wenxin:matting-pro"}
     # 换风格已攻克（主链专属 sa + style），仍在可用列表里
     assert "wenxin:restyle" in ids
 
@@ -566,3 +569,31 @@ def test_restyle_live_path_shape_through_run(tmp_path):
     assert sent["message"]["searchInfo"]["sa"] == "workspace_piccreate_hfg"
     assert sent["message"]["query"][-1]["data"]["text"]["query"] == "油画风"
 
+
+
+# --------------------------------------------------- 根路径落地页 + 结果取回加固
+
+
+def test_index_is_public_landing_page(tmp_path):
+    """`GET /` 是**给人看**的落地页：免鉴权、HTML、内容与注册表对账。"""
+    app, _ = _app(tmp_path)
+    with TestClient(app) as c:
+        r = c.get("/")
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("text/html")
+    body = r.text
+    assert "<title>baidu-service" in body
+    # 免鉴权 + 三大探路入口
+    for path in ("/llms.txt", "/v1/models", "/healthz"):
+        assert f'href="{path}"' in body, f"{path} 链接缺失"
+    # 计数与注册表一致（不许写死）
+    assert f"{len(CAPABILITIES)} 项能力" in body, body[:200]
+    assert "鉴权" in body
+
+
+def test_readyz_exposes_result_fetch_knobs(tmp_path):
+    """结果取回的两个旋钮必须在 `/readyz` 可见（可观测性纪律）。"""
+    app, _ = _app(tmp_path)
+    with TestClient(app) as c:
+        checks = c.get("/readyz").json()["checks"]
+    assert checks["result_fetch"] == {"timeout_s": 60.0, "retries": 2}, checks["result_fetch"]

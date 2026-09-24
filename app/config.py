@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     MAX_BYTES: int = 2 * 1024 * 1024
     # 代取/结果下载的硬字节上限（外链输入与本服务取回上游产物共用）。
     MAX_DOWNLOAD_MB: int = 30
+
+    #: **结果图取回**超时（秒）。比输入取回的 30s 宽 —— 上游结果图在境外 CDN，
+    #: 2026-09-24 实测有 38~47s 的偶发慢（表现为 504）。0/负值走模块默认 30s。
+    RESULT_FETCH_TIMEOUT: float = 60.0
+    #: **结果图取回**重试次数（只重试瞬时错误：超时/网络/5xx/429；4xx 与超限不重试）。
+    RESULT_FETCH_RETRIES: int = 2
     # 上游 SSE 总超时：变清晰实测 5.5s、提线稿 20~25s，另加转存与结果下载 ⇒ 180s 留足。
     TIMEOUT: float = 180.0
 
