@@ -62,7 +62,7 @@ def test_readyz_reports_cookie_and_counts(tmp_path):
     checks = body["checks"]
     assert checks["cookie_configured"] is True
     assert checks["credentials"]["source"] == "explicit"
-    assert checks["capabilities"] == {"total": 20, "available": 12}
+    assert checks["capabilities"] == {"total": 20, "available": 13}
     assert checks["legacy"] == {"mode": "off", "base": None}
     assert checks["risk_window"]["cooling"] is False
     assert checks["proxy_pool"] == []
@@ -107,8 +107,8 @@ def test_models_lists_only_available(tmp_path):
         ids = [m["id"] for m in c.get("/v1/models").json()["data"]]
     assert "wenxin:dewatermark" not in ids
     assert "wenxin:clarity" in ids and "wenxin:expand" in ids
-    assert "wenxin:restyle" not in ids and "wenxin:bgreplace" not in ids
-    assert len(ids) == 12
+    assert "wenxin:restyle" in ids and "wenxin:bgreplace" not in ids
+    assert len(ids) == 13
 
 
 def test_models_includes_unverified_when_gate_open(tmp_path):
@@ -368,14 +368,14 @@ def test_legacy_unlocks_dewatermark_in_models(tmp_path):
     with TestClient(app) as c:
         ids = [m["id"] for m in c.get("/v1/models").json()["data"]]
         caps = c.get("/capabilities").json()
-    assert "wenxin:dewatermark" in ids and len(ids) == 17
+    assert "wenxin:dewatermark" in ids and len(ids) == 18
     dewater = [m for m in caps["models"] if m["id"] == "wenxin:dewatermark"][0]
     assert dewater["legacy_type"] == "1"
     assert caps["legacy"]["mode"] == "fallback"
     # 无映射的未取证能力仍在 not_available（不制造假能力）
     assert "wenxin:reimagine" in [m["id"] for m in caps["not_available"]]
-    # 换风格老接口 14 已死 ⇒ 不因开兜底变可用
-    assert "wenxin:restyle" in [m["id"] for m in caps["not_available"]]
+    # 换风格已攻克（主链专属 sa + style），仍在可用列表里
+    assert "wenxin:restyle" in ids
 
 
 def test_fallback_on_primary_silent_failure(tmp_path):
@@ -465,7 +465,7 @@ def _preview_body(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_entry_type_shape_uses_searchbox_and_enter_type(tmp_path):
-    """换风格/背景替换走**工具入口形状**：sa=searchbox_image + enter_type + 无 mcpInfo。
+    """背景替换走**工具入口形状**：sa=searchbox_image + enter_type + 无 mcpInfo。
 
     形状来源：站点 UI 真实报文（2026-09-24 抓取）。真实调用需 ALLOW_UNVERIFIED（已门禁）。
     """
@@ -473,11 +473,11 @@ def test_entry_type_shape_uses_searchbox_and_enter_type(tmp_path):
     with TestClient(app) as c:
         spy = UpstreamSpy()
         _inject(app, spy)
-        r = _post(c, {"model": "wenxin:restyle", "image": data_uri(PNG_SMALL),
-                      "prompt": "宫崎骏风格"})
+        r = _post(c, {"model": "wenxin:bgreplace", "image": data_uri(PNG_SMALL),
+                      "prompt": "大雪纷飞的背景"})
     body = r.json()
-    assert body["effective"]["entry_type"] == "pic_picfunc_14"
-    assert body["effective"]["query"] == "宫崎骏风格", "prompt 就是指令文本"
+    assert body["effective"]["entry_type"] == "pic_picfunc_11"
+    assert body["effective"]["query"] == "大雪纷飞的背景", "prompt 就是指令文本"
     assert any("工具入口形状" in w for w in body["warnings"])
 
 
@@ -503,9 +503,9 @@ def test_entry_type_requires_instruction_but_dry_run_passes(tmp_path):
         spy = UpstreamSpy()
         _inject(app, spy)
         # 真跑缺指令 ⇒ 400（触网前拒）
-        r = _post(c, {"model": "wenxin:restyle", "image": data_uri(PNG_SMALL)})
+        r = _post(c, {"model": "wenxin:bgreplace", "image": data_uri(PNG_SMALL)})
         # 干跑缺指令 ⇒ 200（闸门语义：干跑穿透）+ 占位警告
-        r2 = _post(c, {"model": "wenxin:restyle", "image": data_uri(PNG_SMALL),
+        r2 = _post(c, {"model": "wenxin:bgreplace", "image": data_uri(PNG_SMALL),
                        "dry_run": True})
     assert r.status_code == 400 and r.json()["error"]["code"] == "missing_instruction"
     assert r2.status_code == 200 and r2.json()["dry_run"] is True
@@ -514,15 +514,76 @@ def test_entry_type_requires_instruction_but_dry_run_passes(tmp_path):
 
 
 def test_entry_type_caps_are_gated_by_default(tmp_path):
-    """换风格/背景替换默认门禁（2026-09-24 复测已变编辑器/agent 形态）。"""
+    """背景替换默认门禁（2026-09-24 复测已变编辑器/agent 形态）。"""
+    app, _ = _app(tmp_path)
+    with TestClient(app) as c:
+        spy = UpstreamSpy()
+        _inject(app, spy)
+        r = _post(c, {"model": "wenxin:bgreplace", "image": data_uri(PNG_SMALL),
+                      "prompt": "大雪纷飞的背景"})
+        caps = c.get("/capabilities").json()
+    assert r.status_code == 503 and r.json()["error"]["code"] == "capability_not_verified"
+    entry = [m for m in caps["not_available"] if m["id"] == "wenxin:bgreplace"][0]
+    assert entry["entry_type"] == "pic_picfunc_11" and entry["needs_instruction"] is True
+    assert spy.seen == []
+
+
+# ----------------------------------------- 换风格：专属 sa + style（2026-09-24 攻克）
+
+
+def test_restyle_uses_hfg_sa_and_style_ext(tmp_path):
+    """换风格走**实测形状**：sa=workspace_piccreate_hfg + ext.style/text + TEXT(标签)。"""
     app, _ = _app(tmp_path)
     with TestClient(app) as c:
         spy = UpstreamSpy()
         _inject(app, spy)
         r = _post(c, {"model": "wenxin:restyle", "image": data_uri(PNG_SMALL),
-                      "prompt": "宫崎骏风格"})
+                      "style": "宫崎骏风", "dry_run": True})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["effective"]["query"] == "宫崎骏风"
+    search = _preview_body(body)["searchInfo"]
+    assert search["sa"] == "workspace_piccreate_hfg", "专属字母码（不是 workspace_piccreate_14）"
+    assert search["enter_type"] == "pic_picfunc_14"
+    ext = json.loads(search["mcpInfo"]["ext"])
+    assert ext["style"] == "miyazaki" and ext["text"] == "宫崎骏风"
+    assert ext["image_source"] == 1, "实测为 1（旧形状是 0）"
+    assert _preview_body(body)["query"][-1]["data"]["text"]["query"] == "宫崎骏风"
+
+
+def test_restyle_accepts_id_and_rejects_unknown_style(tmp_path):
+    app, _ = _app(tmp_path)
+    with TestClient(app) as c:
+        spy = UpstreamSpy()
+        _inject(app, spy)
+        r_ok = _post(c, {"model": "wenxin:restyle", "image": data_uri(PNG_SMALL),
+                         "style": "monet", "dry_run": True})
+        r_bad = _post(c, {"model": "wenxin:restyle", "image": data_uri(PNG_SMALL),
+                          "style": "不存在的风格"})
+        r_missing = _post(c, {"model": "wenxin:restyle", "image": data_uri(PNG_SMALL)})
         caps = c.get("/capabilities").json()
-    assert r.status_code == 503 and r.json()["error"]["code"] == "capability_not_verified"
-    entry = [m for m in caps["not_available"] if m["id"] == "wenxin:restyle"][0]
-    assert entry["entry_type"] == "pic_picfunc_14" and entry["needs_instruction"] is True
-    assert spy.seen == []
+    assert r_ok.status_code == 200
+    assert json.loads(_preview_body(r_ok.json())["searchInfo"]["mcpInfo"]["ext"])["style"] == "monet"
+    assert r_bad.status_code == 400 and r_bad.json()["error"]["code"] == "unknown_style"
+    assert r_missing.status_code == 400 and r_missing.json()["error"]["code"] == "missing_style"
+    assert len(r_missing.json()["error"]["styles"]) == 17, "错误里要给出 17 项可选风格"
+    assert spy.seen == [], "两条 400 都在触网前拒掉"
+    entry = [m for m in caps["models"] if m["id"] == "wenxin:restyle"][0]
+    assert entry["needs_style"] is True and len(entry["styles"]) == 17
+
+
+def test_restyle_live_path_shape_through_run(tmp_path):
+    """真跑（喂假上游）：命中 conversation 且 query=TEXT(风格标签)。"""
+    app, _ = _app(tmp_path)
+    with TestClient(app) as c:
+        spy = UpstreamSpy()
+        _inject(app, spy)
+        r = _post(c, {"model": "wenxin:restyle", "image": data_uri(PNG_SMALL),
+                      "style": "油画风"})
+    assert r.status_code == 200, r.text
+    conv = [e for e in spy.seen if e.url.path == "/aichat/api/conversation"]
+    assert len(conv) == 1
+    sent = json.loads(conv[0].content)
+    assert sent["message"]["searchInfo"]["sa"] == "workspace_piccreate_hfg"
+    assert sent["message"]["query"][-1]["data"]["text"]["query"] == "油画风"
+

@@ -196,11 +196,11 @@ jobs:
           python3 -c "import json;d=json.load(open('/tmp/health.json'));assert d['version']=='$VERSION',d"
 
           curl -sf http://127.0.0.1:18700/readyz | tee /tmp/ready.json; echo
-          python3 -c "import json;d=json.load(open('/tmp/ready.json'));c=d['checks'];assert d['status']=='ok',d;assert c['cookie_configured'] is True,c;assert c['capabilities']=={'total':20,'available':17},c"
+          python3 -c "import json;d=json.load(open('/tmp/ready.json'));c=d['checks'];assert d['status']=='ok',d;assert c['cookie_configured'] is True,c;assert c['capabilities']=={'total':20,'available':18},c"
 
-          # 能力面：免鉴权 /v1/models 列**本部署可用**的 17 条（含老接口补位的去水印）
+          # 能力面：免鉴权 /v1/models 列**本部署可用**的 18 条（含老接口补位的去水印）
           curl -sf http://127.0.0.1:18700/v1/models | tee /tmp/models.json; echo
-          python3 -c "import json;d=json.load(open('/tmp/models.json'));ids=[m['id'] for m in d['data']];assert len(ids)==17,len(ids);assert 'wenxin:dewatermark' in ids,ids;assert 'wenxin:restyle' not in ids,ids"
+          python3 -c "import json;d=json.load(open('/tmp/models.json'));ids=[m['id'] for m in d['data']];assert len(ids)==18,len(ids);assert 'wenxin:dewatermark' in ids,ids;assert 'wenxin:restyle' in ids,ids"
 
           # 鉴权接线自证：无 key 的受保护请求必须 401（在 healthz 成功之后再探）
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST \
@@ -214,12 +214,18 @@ jobs:
             | tee /tmp/dry.json; echo
           python3 -c "import json;d=json.load(open('/tmp/dry.json'));assert d['dry_run'] is True,d;assert d['preview']['legacy']['type']=='8',d['preview']['legacy']"
 
-          # 门禁自证：已判死的能力（换风格）真跑必须 503 capability_not_verified
+          # 换风格（2026-09-24 攻克）：干跑必须给出实测形状「专属 sa + ext.style/text + TEXT(标签)」
+          curl -s -X POST http://127.0.0.1:18700/v1/images/generations \
+            -H "Authorization: Bearer sk-smoke" -H 'Content-Type: application/json' \
+            -d '{"model":"wenxin:restyle","image":"data:image/png;base64,iVBORw0KGgo=","style":"宫崎骏风","dry_run":true}' \
+            | tee /tmp/restyle.json; echo
+          python3 -c "import json;d=json.load(open('/tmp/restyle.json'));s=d['preview']['body']['message']['searchInfo'];ext=json.loads(s['mcpInfo']['ext']);assert s['sa']=='workspace_piccreate_hfg',s['sa'];assert ext['style']=='miyazaki' and ext['text']=='宫崎骏风',ext;assert ext['image_source']==1,ext;assert d['effective']['query']=='宫崎骏风',d['effective']"
+          # 风格非法 ⇒ 400（触网前拒，且给出 17 项候选）
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST \
             http://127.0.0.1:18700/v1/images/generations \
             -H "Authorization: Bearer sk-smoke" -H 'Content-Type: application/json' \
-            -d '{"model":"wenxin:restyle","image":"data:image/png;base64,iVBORw0KGgo=","prompt":"宫崎骏风格"}')" = "503"
-          echo "冒烟通过：起得来、版本一致、能力面/鉴权/遮罩计划/门禁四条全部接线（全程零真实上游）"
+            -d '{"model":"wenxin:restyle","image":"data:image/png;base64,iVBORw0KGgo=","style":"不存在"}')" = "400"
+          echo "冒烟通过：起得来、版本一致、能力面/鉴权/遮罩计划/换风格形状/风格校验五条全部接线（全程零真实上游）"
           docker rm -f smoke
       - name: 推送（版本 / latest / sha- 三 tag 同一镜像）
         env:

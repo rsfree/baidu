@@ -23,7 +23,7 @@ _LEGACY_ONLY = {"wenxin:redraw", "wenxin:similar"}
 
 #: 默认门禁（未取证）——8 项，含 2026-09-24 新判定的编辑器/agent 形态两条
 _GATED = {"wenxin:dewatermark", "wenxin:erase", "wenxin:replace", "wenxin:reimagine",
-          "wenxin:redraw", "wenxin:similar", "wenxin:bgreplace", "wenxin:restyle"}
+          "wenxin:redraw", "wenxin:similar", "wenxin:bgreplace"}
 
 
 def test_registry_shape_and_tool_types():
@@ -42,9 +42,9 @@ def test_registry_shape_and_tool_types():
 def test_gated_set_is_exactly_the_documented_one():
     """未取证的能力集合 = 门禁对象；多一个/少一个都说明有人改了结论而没改这里。
 
-    8 项：去水印（编辑器件形态）＋ 消除/局部替换（主链遮罩未逆向，走老接口）＋
-    相关图编（语义待坐实）＋ AI重绘/相似图（legacy-only）＋
-    **背景替换/换风格（2026-09-24 复测：已变编辑器/agent 形态，单轮与两轮均不出图）**。
+    7 项：去水印（编辑器件形态）＋ 消除/局部替换（主链遮罩未逆向，走老接口）＋
+    相关图编（语义待坐实）＋ AI重绘/相似图（legacy-only）＋ 背景替换（编辑器/agent 形态）。
+    ⚠️ 换风格**已攻克**（2026-09-24：抓到站点真实报文 ⇒ sa=workspace_piccreate_hfg + style/text + TEXT(标签) 出图）。
     """
     gated = {n for n, c in CAPABILITIES.items() if not c.verified}
     assert gated == _GATED
@@ -66,8 +66,10 @@ def test_mask_and_prompt_semantics_are_registered():
     # 工具入口形状（站点 UI 实测的 enter_type）——目前只在背景替换/换风格上
     assert {n: c.entry_type for n, c in CAPABILITIES.items() if c.entry_type} == {
         "wenxin:bgreplace": "pic_picfunc_11", "wenxin:restyle": "pic_picfunc_14"}
-    assert {n for n, c in CAPABILITIES.items() if c.needs_instruction} == \
-        {"wenxin:bgreplace", "wenxin:restyle"}
+    assert {n for n, c in CAPABILITIES.items() if c.needs_instruction} == {"wenxin:bgreplace"}
+    assert {n for n, c in CAPABILITIES.items() if c.needs_style} == {"wenxin:restyle"}
+    assert len(lookup("wenxin:restyle").style_table) == 17
+    assert lookup("wenxin:restyle").workspace_sa == "workspace_piccreate_hfg"
 
 
 def test_availability_gate_and_open():
@@ -75,7 +77,7 @@ def test_availability_gate_and_open():
     ok, reason = availability(cap, allow_unverified=False)
     assert not ok and "BAIDU_ALLOW_UNVERIFIED" in reason
     assert availability(cap, allow_unverified=True)[0]
-    assert len(available(allow_unverified=False)) == 12          # 20 - 8 门禁
+    assert len(available(allow_unverified=False)) == 13          # 20 - 7 门禁
     assert len(available(allow_unverified=True)) == 18           # 20 - 2 legacy-only
 
 
@@ -111,13 +113,13 @@ def test_absences_are_documented():
 def test_legacy_unlocks_exactly_the_mapped_capabilities():
     default = available(allow_unverified=False)
     with_legacy = available(allow_unverified=False, legacy=True)
-    assert len(default) == 12
-    # 12 主链 + 3 有映射的未取证（去水印/消除/局部替换）+ 2 legacy-only = 17
-    assert len(with_legacy) == 17
+    assert len(default) == 13
+    # 13 主链 + 3 有映射的未取证（去水印/消除/局部替换）+ 2 legacy-only = 18
+    assert len(with_legacy) == 18
     assert {"wenxin:dewatermark", "wenxin:erase", "wenxin:replace",
             "wenxin:redraw", "wenxin:similar"} <= set(with_legacy)
     assert "wenxin:reimagine" not in with_legacy         # 无映射 ⇒ 不因兜底变可用
-    assert "wenxin:restyle" not in with_legacy           # 老接口 14 已死 ⇒ 不因兜底变可用
+    assert "wenxin:restyle" in with_legacy               # 主链已攻克（与老接口兜底无关）
 
 
 def test_legacy_type_registry_is_evidence_based():

@@ -253,6 +253,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "legacy_uses_prompt": cap.legacy_uses_prompt,
                 "entry_type": cap.entry_type,
                 "needs_instruction": cap.needs_instruction,
+                "needs_style": cap.needs_style,
+                "styles": [{"id": i, "label": lb} for i, lb in cap.style_table] or None,
                 "accepts": list(ACCEPTS),
                 "supports_ratio": cap.supports_ratio,
                 "verified": cap.verified,
@@ -284,13 +286,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not isinstance(payload, dict):
             raise ApiError(400, "invalid_body", "请求体必须是 JSON 对象")
 
-        cap, image_value, mask_value, size, prompt, response_format, dry, unsupported = \
+        cap, image_value, mask_value, style_value, size, prompt, response_format, dry, unsupported = \
             validate_request(payload)
         dry_run = dry or _header_dry_run(request)
 
         body = await run(
             settings=s, client=_client(request), gate=_gate(request), risk=_risk(request),
-            cap=cap, image_value=image_value, mask_value=mask_value, size=size,
+            cap=cap, image_value=image_value, mask_value=mask_value, style_value=style_value,
+            size=size,
             prompt=prompt, response_format=response_format, dry_run=dry_run,
             unsupported=unsupported,
         )

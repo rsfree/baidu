@@ -28,6 +28,10 @@
 
 > ⚠️ **两种请求形状**（2026-09-24 实测）：以上是 **workspace 形状**（默认，覆盖绝大多数能力）。
 > 少数工具在站点 UI 里走**工具入口形状**：`searchInfo.sa = searchbox_image` +
+> ⚠️ 另有**专属 sa 覆写**：换风格实测 `sa=workspace_piccreate_hfg`（不是 `workspace_piccreate_14`），
+> 且 `ext` 里带 `style`(id)/`text`(标签)、`image_source=1`，`query[TEXT]` 为**风格标签** ——
+> 见 §7 的攻克记录。
+>
 > `searchInfo.enter_type = pic_picfunc_<N>` + **无 `mcpInfo`** + `query[TEXT].query = 自然语言指令`
 > （UI 实测入口码：背景替换 11 / 风格转换 14 / 局部替换 5 / 涂抹消除 8 / 相似图 7）。
 > 本服务对 `restyle`/`bgreplace` 已按该形状构造（`Capability.entry_type`），但**实测这两条
@@ -162,13 +166,17 @@ GET  {LEGACY_BASE}/aigc/pcquery?taskId=…
 
 - 去水印（toolType 2）：2026-09-12 起复测为「跳交互式编辑器」形态（`items:null` + 深链），
   未复现出图 ⇒ 默认门禁（**老接口 type=1 已补位**）；
-- **换风格（toolType 14）/ 背景替换（toolType 11）：2026-09-24 复测已变「编辑器 / agent」形态** ——
-  · workspace 形状（`sa=workspace_piccreate_14`）只回 **`picEditBaseUrl`**（跳编辑器）；
-  · 工具入口形状（站点 UI 实测：`sa=searchbox_image` + `enter_type=pic_picfunc_14`／`_11`、
-    **无 mcpInfo**）只回**风格分析文字与追问**（连发两轮、并用返回的 `sessionId` 做 `ori_lid`
-    续轮，帧内始终无 `image-generate`）⇒ 单请求交付不了，已设门禁；
-  · 两能力的**站点入口码实测**：背景替换 `pic_picfunc_11`、风格转换 `pic_picfunc_14`、
-    局部替换 `_5`、涂抹消除 `_8`、相似图 `_7`；
+- ✅ **换风格（toolType 14）2026-09-24 攻克**（从站点真实报文逆出，已上线）：
+  `sa=workspace_piccreate_hfg`（**专属字母码**）+ `enter_type=pic_picfunc_14` +
+  `mcpInfo.ext{type:14, image, image_source:**1**, channel:edit, style:<id>, text:<标签>}` +
+  `query=[IMAGE, TEXT(<标签>)]` ⇒ **出图**（真跑：宫崎骏风 10.3s / 油画风 10.7s，900×600）。
+  风格表 = `GET image.baidu.com/aigc/extinfo` 的 `style[]`（**17 项 id↔标签**，服务端下发）。
+  对照（三条都试过、都不出图）：旧 workspace 形状（`sa=workspace_piccreate_14`、无 style/text、
+  `image_source=0`）只回 `picEditBaseUrl`（跳编辑器）；工具入口形状（无 mcpInfo）只回对话文字；
+  老接口 `type=14` 九次尝试恒 status 5。
+- 背景替换（toolType 11）：workspace 形状回「未识别到主体」、工具入口形状只回对话文字 ⇒ 仍门禁。
+  两能力的**站点入口码实测**：背景替换 `pic_picfunc_11`、风格转换 `pic_picfunc_14`、
+  局部替换 `_5`、涂抹消除 `_8`、相似图 `_7`；
 - 局部替换 / 消除：主链需**涂抹遮罩**，遮罩参数未逆向 ⇒ 主链形态默认门禁
   （**老接口遮罩语义已判决并生效**，见 §6.5）；
 - 相关图编：toolType 13/28~34 同指，具体语义待坐实 ⇒ 默认门禁（**无老接口映射**）；

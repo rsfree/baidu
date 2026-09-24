@@ -38,6 +38,7 @@ __all__ = [
     "NOT_REGISTERED",
     "DELIBERATELY_ABSENT",
     "EXPAND_RATIOS",
+    "RESTYLE_STYLES",
     "ACCEPTS",
     "MODEL_RELEASED_AT",
     "OWNED_BY",
@@ -56,6 +57,20 @@ EXPAND_RATIOS: tuple[str, ...] = ("1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2
 
 #: 本服务接受的输入图家族（按真实字节嗅探）。GIF 未取证 ⇒ 不收（见 media.py）。
 ACCEPTS = IMAGE_KINDS
+
+
+#: 「换风格」的 17 种风格：`(id, 中文标签)`——**服务端下发**（`image.baidu.com/aigc/extinfo` 的
+#: `style[]`，2026-09-24 实测抓取）。请求时 id 进 `ext.style`、标签进 `ext.text` 与 TEXT query。
+RESTYLE_STYLES: tuple[tuple[str, str], ...] = (
+    ("miyazaki", "宫崎骏风"), ("giboli", "吉卜力风"), ("pailide_clay", "拍立得风"),
+    ("clay", "橡皮泥风"), ("monet", "油画风"), ("style_transfer12", "奇幻卡通"),
+    ("style_transfer11", "梵高"), ("style_transfer4", "炫彩插画"),
+    ("style_transfer9", "浪漫雕塑"), ("style_transfer3", "光的气息"),
+    ("style_transfer1", "复古胶片"), ("style_transfer2", "美式画报"),
+    ("style_transfer5", "法式风情"), ("style_transfer10", "童话镇"),
+    ("style_transfer6", "水神"), ("style_transfer7", "野兽派"),
+    ("style_transfer8", "白月光"),
+)
 
 
 @dataclass(frozen=True)
@@ -88,9 +103,15 @@ class Capability:
     #: UI 点「风格转换」落在 `enter_type=pic_picfunc_14`、「背景替换」= `pic_picfunc_11`；
     #: 而旧形状（`workspace_piccreate_14`）如今只回`picEditBaseUrl`（跳编辑器），不出图。
     entry_type: str | None = None
-    #: 工具入口形状下，**调用方的 `prompt` 就是指令文本**（风格名 / 背景描述）——
-    #: 实测：UI 第一轮只发图 + 入口码（助手回"你想换成什么风格"），第二轮用**自然语言**给风格。
+    #: 工具入口形状下，**调用方的 `prompt` 就是指令文本**（背景描述）——
+    #: 实测：UI 第一轮只发图 + 入口码（助手回"你想换成什么背景"），第二轮用**自然语言**给描述。
     needs_instruction: bool = False
+    #: **workspace 形状的 `sa` 覆写**：个别工具用专属字母码（实测：换风格 = `workspace_piccreate_hfg`，
+    #: 而不是 `workspace_piccreate_<tt>`）。设置后 `build_body` 用它，并带 `image_source=1`。
+    workspace_sa: str | None = None
+    #: 该能力需要**风格选择**（`style` 字段）：`(id, label)` 表由服务端下发（见模块常量）。
+    needs_style: bool = False
+    style_table: tuple[tuple[str, str], ...] = ()
     evidence: str = ""              # 取证出处（实测记录）
     notes: str = ""
 
@@ -157,16 +178,22 @@ CAPABILITIES: dict[str, Capability] = {
     ),
     "wenxin:restyle": Capability(
         name="wenxin:restyle", title="换风格",
-        tool_type="14", verified=False,
-        entry_type="pic_picfunc_14", needs_instruction=True,
+        tool_type="14", verified=True,
+        entry_type="pic_picfunc_14", workspace_sa="workspace_piccreate_hfg",
+        needs_style=True, style_table=RESTYLE_STYLES,
         evidence=(
-            "枚举期（§3）出图 ✅；**2026-09-24 复测：workspace 形状只回 `picEditBaseUrl`（跳编辑器）"
-            "不出图**；工具入口形状（sa=searchbox_image + enter_type=pic_picfunc_14）只回风格分析"
-            "与追问（两轮亦不出图）。老接口 type=14 已死：9 次尝试（5 个 style 值 × 两种端点 × "
-            "两种输入形态）create 受理但任务恒 status=5"
+            "**2026-09-24 从站点 UI 抓到的可用报文**：`sa=workspace_piccreate_hfg` + "
+            "`enter_type=pic_picfunc_14` + `mcpInfo.ext{type:14, image, image_source:1, channel:edit, "
+            "style:<id>, text:<标签>}` + `query=[IMAGE, TEXT(标签)]` ⇒ **出图**（浏览器实点「宫崎骏风」，"
+            "结果图落在 `aisearch.cdn.bcebos.com/pic_create/…jpeg`）。风格表由 "
+            "`image.baidu.com/aigc/extinfo` 服务端下发（17 项 id↔标签）。"
+            "对照：旧形状（`sa=workspace_piccreate_14`、无 style/text、`image_source=0`）只回 "
+            "`picEditBaseUrl`（跳编辑器）；工具入口形状（无 mcpInfo）只回对话文字。"
+            "老接口 type=14 已死（9 次尝试恒 status=5）"
         ),
-        notes="需 `prompt`（风格名，自然语言，如「宫崎骏风格」）；"
-              "要交付需逆向编辑器（picEditBaseUrl）或 agent 多轮流程；试跑请设 BAIDU_ALLOW_UNVERIFIED=1",
+        notes="需 `style`（id 或中文标签，见 `/capabilities` 的 `style_table`）；"
+              "17 项：宫崎骏风/吉卜力风/拍立得风/橡皮泥风/油画风/奇幻卡通/梵高/炫彩插画/浪漫雕塑/"
+              "光的气息/复古胶片/美式画报/法式风情/童话镇/水神/野兽派/白月光",
     ),
     "wenxin:sketch": Capability(
         name="wenxin:sketch", title="提线稿", **_verified_main(

@@ -81,8 +81,10 @@ def phase_shapes() -> int:
                 payload["size"] = "4:3"
             if cap.requires_mask:
                 payload["mask"] = MASK_URI
-            if cap.legacy_uses_prompt or cap.needs_instruction:
-                payload["prompt"] = "宫崎骏风格" if cap.needs_instruction else "一只橘猫"
+            if cap.needs_style:
+                payload["style"] = cap.style_table[0][1]
+            elif cap.legacy_uses_prompt or cap.needs_instruction:
+                payload["prompt"] = "一只橘猫"
             r = c.post("/v1/images/generations", json=payload)
             body = r.json()
             gate = "" if cap.verified else "（门禁中，dry 放行）"
@@ -97,7 +99,7 @@ def phase_shapes() -> int:
             else:
                 msg = prev["body"]["message"]
                 search = msg["searchInfo"]
-                if cap.entry_type:
+                if cap.entry_type and not cap.needs_style:
                     # 工具入口形状：sa=searchbox_image + enter_type=<码> + **无 mcpInfo**
                     shape_ok = (search["sa"] == "searchbox_image"
                                 and search["enter_type"] == cap.entry_type
@@ -110,7 +112,15 @@ def phase_shapes() -> int:
                                 and search["chatParams"]["chat_token"] == "***")
                     if cap.requires_mask:
                         shape_ok = shape_ok and (prev.get("legacy") or {}).get("mask") is True
-                    detail = f"tt={cap.tool_type}"
+                    if cap.needs_style:
+                        # 实测形状：专属 sa + ext.style/text + image_source=1
+                        shape_ok = (shape_ok and search["sa"] == cap.workspace_sa
+                                    and ext.get("style") == cap.style_table[0][0]
+                                    and ext.get("text") == cap.style_table[0][1]
+                                    and ext.get("image_source") == 1)
+                        detail = f"sa={cap.workspace_sa} style={ext.get('style')}"
+                    else:
+                        detail = f"tt={cap.tool_type}"
             if not (ok and shape_ok):
                 bad += 1
             print(f"{'✅' if ok and shape_ok else '❌'} {name:<22s} {detail:<16s} "
@@ -142,8 +152,10 @@ def phase_loop() -> int:
             payload: dict[str, object] = {"model": name, "image": DATA_URI}
             if cap.requires_mask:
                 payload["mask"] = MASK_URI
-            if cap.legacy_uses_prompt or cap.needs_instruction:
-                payload["prompt"] = "宫崎骏风格" if cap.needs_instruction else "一只橘猫"
+            if cap.needs_style:
+                payload["style"] = cap.style_table[0][1]
+            elif cap.legacy_uses_prompt or cap.needs_instruction:
+                payload["prompt"] = "一只橘猫"
             r = c.post("/v1/images/generations", json=payload)
             body = r.json()
             if ok_gate:

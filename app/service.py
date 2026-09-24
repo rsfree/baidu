@@ -41,13 +41,13 @@ from .upstream.baidu.capabilities import build_body, redact_payload
 __all__ = ["run", "validate_request"]
 
 #: 请求里允许出现的键（其余键 → 400，避免拼写错误被静默吞掉）
-_ALLOWED_KEYS = ("model", "image", "mask", "size", "prompt", "response_format", "dry_run")
+_ALLOWED_KEYS = ("model", "image", "mask", "style", "size", "prompt", "response_format", "dry_run")
 
 #: 认识、但**上游/本服务不支持**的字段：不报错，进 `unsupported[]`。
 #: 静默丢弃是大忌 —— 调用方会以为控制生效了。这份清单与 OpenAI/seedream 图片契约
-#: 的常见字段对齐；上游（文心）只认「能力名 + 输入图 + 扩图比例」三件事。
+#: 的常见字段对齐；上游（文心）只认「能力名 + 输入图 + 扩图比例 + 风格 id」几件事。
 _KNOWN_UNSUPPORTED = (
-    "n", "quality", "style", "seed", "negative_prompt", "watermark", "user",
+    "n", "quality", "seed", "negative_prompt", "watermark", "user",
     "stream", "background", "output_format", "moderation",
     "sequential_image_generation", "sequential_image_generation_options", "extra_body",
 )
@@ -63,10 +63,10 @@ _MB = 1024 * 1024
 
 def validate_request(
     payload: Any,
-) -> tuple[Capability, str, str | None, str | None, str | None, str, bool, list[str]]:
+) -> tuple[Capability, str, str | None, str | None, str | None, str | None, str, bool, list[str]]:
     """校验请求体的**键集与模型名**。
 
-    返回 `(cap, image, mask, size, prompt, response_format, dry_run, unsupported)`。
+    返回 `(cap, image, mask, style, size, prompt, response_format, dry_run, unsupported)`。
     """
     if not isinstance(payload, dict):
         raise ApiError(400, "invalid_body", "请求体必须是 JSON 对象")
@@ -124,7 +124,12 @@ def validate_request(
 
     dry = bool(payload.get("dry_run"))
     unsupported = [k for k in _KNOWN_UNSUPPORTED if payload.get(k) is not None]
+    style = payload.get("style")
+    if style is not None and not isinstance(style, str):
+        raise ApiError(400, "invalid_style", "style 必须是字符串（风格 id 或中文标签）")
+
     return (cap, image.strip(), (mask.strip() if isinstance(mask, str) else None),
+            (style.strip() if isinstance(style, str) else None),
             (size.strip() if isinstance(size, str) else None),
             (prompt if isinstance(prompt, str) else None), response_format, dry, unsupported)
 
@@ -143,6 +148,7 @@ async def run(
     cap: Capability,
     image_value: str,
     mask_value: str | None = None,
+    style_value: str | None = None,
     size: str | None = None,
     prompt: str | None = None,
     response_format: str = "b64_json",
@@ -190,7 +196,34 @@ async def run(
     #    实测：该形状下上游按自然语言指令出图，没有指令只会回风格分析或编辑器链接；
     #  · workspace 形状：query 必须严格等于能力名（chat_token 的 md5 与它绑定）。
     query_text = cap.title
-    if cap.needs_instruction:
+    if cap.needs_style:
+        # 风格类（实测形状：sa=workspace_piccreate_hfg + ext.style/text + TEXT=标签）
+        raw_style = (style_value or prompt or "").strip()
+        sid = label = ""
+        for _id, _label in cap.style_table:
+            if raw_style in (_id, _label):
+                sid, label = _id, _label
+                break
+        if not sid:
+            options = "、".join(f"{l}({i})" for i, l in cap.style_table)
+            if not raw_style and dry_run:      # 干跑穿透
+                sid, label = cap.style_table[0]
+                warnings.append(f"「{cap.title}」需要 style；干跑未提供 ⇒ 预览按首个风格"
+                                f"「{label}」构造（可选 {len(cap.style_table)} 项）")
+            elif not raw_style:
+                raise ApiError(400, "missing_style",
+                               f"「{cap.title}」需要 style（id 或中文标签）—— 可选：{options}",
+                               model=cap.name, styles=[{"id": i, "label": l}
+                                                       for i, l in cap.style_table])
+            else:
+                raise ApiError(400, "unknown_style",
+                               f"未知风格 {raw_style!r} —— 可选：{options}",
+                               model=cap.name, styles=[{"id": i, "label": l}
+                                                       for i, l in cap.style_table])
+        query_text = label
+        warnings.append(f"style={sid}（{label}）→ ext.style/text + TEXT query；"
+                        f"sa={cap.workspace_sa}（实测形状）")
+    elif cap.needs_instruction:
         if not prompt or not prompt.strip():
             if dry_run:      # 闸门语义：干跑穿透（可零成本预演计划）
                 warnings.append(f"「{cap.title}」走工具入口形状"

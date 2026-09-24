@@ -114,6 +114,8 @@ def build_body(
     lid: str,
     expand: str | None = None,
     ori_lid: str = "",
+    style_id: str = "",
+    style_label: str = "",
 ) -> dict[str, Any]:
     """构造 `/aichat/api/conversation` 的请求体。
 
@@ -131,7 +133,7 @@ def build_body(
     干跑才能在不触网的前提下构造请求体。
     """
     tt = cap.tool_type
-    if cap.entry_type:
+    if cap.entry_type and not cap.needs_style:
         return {
             "message": {
                 "inputMethod": "chat_search",
@@ -172,7 +174,19 @@ def build_body(
     ext: dict[str, Any] = {"type": tt, "image": image_url, "image_source": 0, "channel": "edit"}
     if expand:
         ext["image_expand"] = expand
-    sa = f"workspace_piccreate_{tt}"
+    sa = cap.workspace_sa or f"workspace_piccreate_{tt}"
+    if cap.needs_style:
+        # 实测（2026-09-24，站点 UI 真实报文）：风格类工具的 `sa` 是**专属字母码**
+        # （换风格 = `workspace_piccreate_hfg`），且 ext 里必须带 `style`(id) / `text`(标签)、
+        # `image_source=1` —— 缺 style/text 时上游只回编辑器链接（`picEditBaseUrl`）不出图。
+        sid, slabel = style_id, style_label
+        if not sid:                      # 由 query_text（= 风格标签）自解析 id
+            for _id, _label in cap.style_table:
+                if query_text.strip() == _label:
+                    sid, slabel = _id, _label
+                    break
+        ext.update({"imageId": "", "image_source": 1,
+                    "style": sid or query_text, "text": slabel or query_text})
     return {
         "message": {
             "inputMethod": "chat_search",
@@ -182,7 +196,7 @@ def build_body(
             "searchInfo": {
                 "srcid": "", "order": "", "tplname": "", "dqaKey": "",
                 "re_rank": str(rank), "ori_lid": ori_lid or lid, "sa": sa,
-                "enter_type": "unknown",
+                "enter_type": cap.entry_type or "unknown",
                 "chatParams": {"setype": "csaitab",
                                "chat_token": build_chat_token(token, query_text, lid)},
                 "isPrivateChat": False,

@@ -51,6 +51,7 @@
 | `model` | ✅ | `wenxin:<name>`（20 项，见 §7）；未注册名 ⇒ 400 `unknown_model` |
 | `image` | ✅ | **三种形态**：data URI / http(s) URL / 裸 base64。类型**按真实字节嗅探**（png/jpeg/webp/bmp；**GIF 不收**） |
 | `mask` | ❌ | **只有「消除 / 局部替换」消费**（这两个能力**必填**，缺 ⇒ 400 `missing_mask`）：**黑底 + 白框**的图片，**白色标记「要处理的区域」**；形态同 `image`。其余能力给了 mask ⇒ 忽略 + `warnings[]` 明示 |
+| `style` | ❌ | **只有「换风格」消费**（**必填**，缺 ⇒ 400 `missing_style`；未知值 ⇒ 400 `unknown_style` 并回 17 项候选）：风格 **id**（如 `miyazaki`）或**中文标签**（如 `宫崎骏风`）。17 项见 `/capabilities` 的 `styles`；请求时 id 进 `ext.style`、标签进 `ext.text` 与 TEXT query |
 | `response_format` | ❌ | `b64_json`（默认）/ `url`（落盘 + `/files/{name}`） |
 | `size` | ❌ | **只有「扩图」消费**：解释为 `image_expand` 比例（`"4:3"`；也接受 `"WxH"` 并化简）。其余能力**忽略 + `warnings[]` 明示** |
 | `prompt` | ❌ | 主链 workspace 形状要求 query 严格等于能力名 ⇒ **默认忽略（`warnings[]` 明示）**；**`wenxin:replace` 上映射为老接口 `text`**；**`wenxin:restyle` / `wenxin:bgreplace` 上是「指令文本」**（工具入口形状 `sa=searchbox_image` + `enter_type`，缺 ⇒ 400 `missing_instruction`；干跑放行）；`BAIDU_PROMPT_MODE=prepend` 才在主链拼接（**未经验证**） |
@@ -146,7 +147,8 @@
 
 | 闸门 | 真跑 | dry_run | 说明 |
 |---|---|---|---|
-| 未取证能力（8 项） | 503 | ✅ 放行 | 开 `BAIDU_LEGACY` 后其中 5 项经老接口可用；另 3 项（`reimagine` / `restyle` / `bgreplace`）**无可用通路**（后两者 2026-09-24 复测为编辑器/agent 形态） |
+| 未取证能力（7 项） | 503 | ✅ 放行 | 开 `BAIDU_LEGACY` 后其中 5 项经老接口可用；另 2 项（`reimagine` / `bgreplace`）**无可用通路**（编辑器/agent 形态） |
+| 换风格缺/错 `style` | 400 | ✅ 放行 | 真跑缺 ⇒ `missing_style`（含 17 项候选）；干跑按首个风格预览 |
 | 工具入口形状缺指令（`restyle`/`bgreplace`） | 400 | ✅ 放行 | 真跑缺 `prompt` ⇒ `missing_instruction`；干跑按占位预览 |
 | 遮罩类缺 `mask` | 400 | ✅ 放行 | 必填字段校验在触网前；干跑只做计划 |
 | 未配 cookie | 503 | ✅ 放行 | 干跑不触网 |
@@ -173,7 +175,7 @@
 | `wenxin:matting` / `wenxin:matting-pro` | 抠图 / 背景抠图（同能力域） | ✅ |
 | `wenxin:bgreplace` | 背景替换 | ⛔ 未取证（**2026-09-24 复测已变编辑器/agent 形态**：workspace 形状回「未识别到主体」，工具入口形状只回对话文字；老接口 12 已死） |
 | `wenxin:sketch` | 提线稿（最慢，20~25s） | ✅ |
-| `wenxin:restyle` | 换风格 | ⛔ 未取证（**2026-09-24 复测**：workspace 形状只回 `picEditBaseUrl` 编辑器链接；工具入口形状只回风格分析与追问，两轮亦不出图；老接口 14 已死） |
+| `wenxin:restyle` | 换风格（**需 `style`**，17 项可选） | ✅ **2026-09-24 攻克**：站点真实报文 = `sa=workspace_piccreate_hfg` + `enter_type=pic_picfunc_14` + `ext{…, image_source:1, style:<id>, text:<标签>}` + `query=[IMAGE, TEXT(标签)]`；真跑 宫崎骏风 10.3s / 油画风 10.7s（均 900×600）。风格表由 `image.baidu.com/aigc/extinfo` 下发 |
 | `wenxin:textreplace` | 文字替换 | ✅ |
 | `wenxin:restore` / `wenxin:removeperson` / `wenxin:removetext` | 图片修复 / 去路人 / 去文字 | ✅ |
 | `wenxin:filter` / `wenxin:beauty` / `wenxin:ps` | 滤镜 / 美颜 / P图 | ✅ |
