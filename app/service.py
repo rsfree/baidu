@@ -425,6 +425,9 @@ async def run(
     # ---- 8) 装配（唯一出口）----
     if legacy_used:
         _fitted = (legacy_info or {}).get("fitted")
+        if (legacy_info or {}).get("identity_rotated"):
+            warnings.append("老接口拉黑了当前 cookie（无任务号 + 无 resType）—— 已自动铸造新匿名身份并重试成功"
+                            "（实测：该封禁粘在 cookie 上、与出口 IP 无关）")
         if _fitted:
             warnings.append(
                 f"输入已按老接口实测上限自动等比压缩："

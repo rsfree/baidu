@@ -516,7 +516,38 @@ class BaiduClient:
 
     # ------------------------------------------------------------------ 老接口兜底
 
-    def _legacy_headers(self) -> dict[str, str]:
+    async def _legacy_create(self, base: str, form: dict[str, str],
+                             cookie: str) -> tuple[dict[str, Any] | None, int, str]:
+        """`pccreate` 一次提交（**不重试**）⇒ `(解析后的响应 | None, http_status, body_head)`。"""
+        async with self._session() as client:
+            r = await client.post(f"{base}/aigc/pccreate", data=form,
+                                  headers=self._legacy_headers(cookie), timeout=60)
+        try:
+            return r.json(), r.status_code, ""
+        except ValueError:
+            return None, r.status_code, r.text[:200]
+
+    async def mint_anonymous_cookie(self, base: str) -> str:
+        """现场铸一个**匿名 cookie**（`GET image.baidu.com/` 的 `Set-Cookie`）。
+
+        实测（2026-09-24）：老接口的频控**粘在 cookie 上**（同一 cookie 冷却 15 分钟后仍拒），
+        而**换一个新匿名 cookie、同一个出口 IP 立刻收单** ⇒ 这是本服务的"换身份"杠杆。
+        """
+        async with self._session() as client:
+            r = await client.get(f"{base}/", headers={"User-Agent": _UA}, timeout=30)
+        parts: list[str] = []
+        for raw_cookie in r.headers.get_list("set-cookie"):
+            name = raw_cookie.split("=", 1)[0].strip()
+            if name in ("BAIDUID", "BIDUPSID", "BAIDUID_BFESS", "PSTM"):
+                parts.append(raw_cookie.split(";", 1)[0].strip())
+        if not any(p.startswith("BAIDUID=") for p in parts):
+            raise UpstreamUnavailableError(
+                "铸匿名 cookie 失败：首页没有下发 BAIDUID",
+                detail={"status": r.status_code},
+            )
+        return "; ".join(parts)
+
+    def _legacy_headers(self, cookie: str | None = None) -> dict[str, str]:
         """老接口（`image.baidu.com`）的出站头：表单提交 + 同款 cookie。
 
         ⚠️ `Origin/Referer` 必须是 **image.baidu.com**（不是 wenxin.baidu.com）——
@@ -525,7 +556,7 @@ class BaiduClient:
         base = self._s.LEGACY_BASE.rstrip("/")
         return {
             "User-Agent": _UA,
-            "Cookie": self._s.COOKIE,
+            "Cookie": cookie or self._s.COOKIE,
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
             "Referer": f"{base}/",
             "Origin": base,
@@ -568,49 +599,65 @@ class BaiduClient:
         if fitted:
             info["fitted"] = fitted
 
-        async with self._session() as client:
+        cookie = self._s.COOKIE
+        for attempt in (1, 2):
             try:
-                r = await client.post(f"{base}/aigc/pccreate", data=form,
-                                      headers=self._legacy_headers(), timeout=60)
+                created, r_status, r_text_head = await self._legacy_create(base, form, cookie)
             except httpx.HTTPError as exc:
                 raise UpstreamUnavailableError(
                     f"老接口创建失败（网络）：{exc}") from exc
-            try:
-                created = r.json()
-            except ValueError as exc:
+            if created is None:
                 raise UpstreamUnavailableError(
                     "老接口 pccreate 返回非 JSON",
-                    detail={"http_status": r.status_code, "body_head": r.text[:200]},
-                ) from exc
-            if created.get("status") != 0 or not created.get("pcEditTaskid"):
-                # 拒单要**报错友好**：按实测的两种拒法分别给可操作提示（2026-09-24）。
-                res_type = created.get("resType")
-                if res_type == 2:
-                    hint = ("疑似**入参体积/内容**不符合老接口要求：本服务已自动压缩到 "
-                            f"≤{self._s.LEGACY_MAX_IMAGE_SIDE}px / {self._s.LEGACY_MAX_IMAGE_BYTES}B；"
-                            "若仍被拒请换更小或更规整的图，或改用主链能力")
-                elif res_type is None:
-                    hint = ("响应里既无任务号也无 resType —— **多为频繁调用触发的限流**（实测连发 70 次后出现）："
-                            "请稍后重试；本服务自身有节流（BAIDU_MIN_INTERVAL），直接打上游才会这样")
-                else:
-                    hint = f"resType={res_type}（未知拒法）：请把该输入留档反馈，便于补进边界表"
-                raise UpstreamUnavailableError(
-                    f"老接口拒绝创建（status={created.get('status')}，"
-                    f"message={created.get('message')}，resType={res_type}）：{hint}",
-                    detail={"body": json.dumps(created, ensure_ascii=False)[:300],
-                            "res_type": res_type, "hint": hint},
+                    detail={"http_status": r_status, "body_head": r_text_head},
                 )
-            task_id = str(created["pcEditTaskid"])
-            info.update({"task_id": task_id, "create_status": created.get("status")})
+            # 🔑 被拉黑（无任务号 + 无 resType）⇒ 换一个**新匿名 cookie** 重试一次
+            if (attempt == 1 and self._s.ROTATE_COOKIE_ON_BURN
+                    and created.get("status") == 0 and not created.get("pcEditTaskid")
+                    and created.get("resType") is None):
+                try:
+                    cookie = await self.mint_anonymous_cookie(base)
+                except Exception as exc:                     # noqa: BLE001 — 铸不出就按原样报错
+                    logger.warning(f"铸匿名 cookie 失败，按原错误上抛：{exc}")
+                else:
+                    info["identity_rotated"] = {
+                        "reason": "该 cookie 被老接口拉黑（无任务号 + 无 resType）",
+                        "minted": True,
+                    }
+                    logger.info("老接口拉黑了当前 cookie ⇒ 已铸新匿名身份并重试（同 IP）")
+                    continue
+            break
 
-            t0 = time.time()
-            last: dict[str, Any] = {}
+        if created.get("status") != 0 or not created.get("pcEditTaskid"):
+            # 拒单要**报错友好**：按实测的两种拒法分别给可操作提示（2026-09-24）。
+            res_type = created.get("resType")
+            if res_type == 2:
+                hint = ("疑似**入参体积/内容**不符合老接口要求：本服务已自动压缩到 "
+                        f"≤{self._s.LEGACY_MAX_IMAGE_SIDE}px / {self._s.LEGACY_MAX_IMAGE_BYTES}B；"
+                        "若仍被拒请换更小或更规整的图，或改用主链能力")
+            elif res_type is None:
+                hint = ("响应里既无任务号也无 resType —— 该 cookie 疑似被拉黑（本服务会**自动换新匿名身份重试一次**；"
+                        "若已重试仍失败，多半是瞬时频控，稍后重试即可）")
+            else:
+                hint = f"resType={res_type}（未知拒法）：请把该输入留档反馈，便于补进边界表"
+            raise UpstreamUnavailableError(
+                f"老接口拒绝创建（status={created.get('status')}，"
+                f"message={created.get('message')}，resType={res_type}）：{hint}",
+                detail={"body": json.dumps(created, ensure_ascii=False)[:300],
+                        "res_type": res_type, "hint": hint},
+            )
+        task_id = str(created["pcEditTaskid"])
+        info.update({"task_id": task_id, "create_status": created.get("status")})
+
+        t0 = time.time()
+        last: dict[str, Any] = {}
+        async with self._session() as client:
             for i in range(1, max(1, self._s.LEGACY_POLL_TRIES) + 1):
                 await asyncio.sleep(max(0.1, self._s.LEGACY_POLL_INTERVAL))
                 try:
                     q = await client.get(f"{base}/aigc/pcquery",
                                          params={"taskId": task_id},
-                                         headers=self._legacy_headers(), timeout=30)
+                                         headers=self._legacy_headers(cookie), timeout=30)
                     payload = q.json()
                 except (httpx.HTTPError, ValueError) as exc:
                     raise UpstreamUnavailableError(f"老接口轮询失败：{exc}") from exc

@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import base64
+
 import httpx
 import pytest
 
@@ -146,10 +148,66 @@ def test_legacy_refusal_messages_are_actionable():
         return _client(handler)
 
     for body, expect in (({"status": 0, "resType": 2}, "入参体积"),
-                         ({"status": 0, "resType": None}, "限流"),
+                         ({"status": 0, "resType": None}, "自动换新匿名身份"),
                          ({"status": 0, "resType": 9}, "未知拒法")):
         c = make(body)
         with pytest.raises(UpstreamUnavailableError) as ei:
             arun(c.legacy_process("1", b"\x89PNG\r\n\x1a\n" + b"0" * 32))
         arun(c.aclose())
         assert expect in str(ei.value), f"{body} ⇒ {ei.value}"
+
+
+def test_burned_cookie_triggers_identity_rotation():
+    """cookie 被老接口拉黑（无任务号 + 无 resType）⇒ **自动铸新匿名身份并重试一次**。
+
+    实测依据（2026-09-24 对照实验）：同一 cookie 冷却 15 分钟仍被拒；**换新匿名 cookie、同 IP 立刻收单**。
+    这里把三次交互钉死：① 旧 cookie 被拒 → ② GET 首页铸到新 cookie → ③ 新 cookie 成功受理。
+    """
+    seen: list[str] = []
+    state = {"creates": 0, "minted": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/":                                   # 铸身份
+            state["minted"] = True
+            return httpx.Response(200, headers={
+                "set-cookie": "BAIDUID=FRESH:FG=1; Path=/; Domain=baidu.com",
+            }, text="<html></html>")
+        if request.url.path.endswith("/aigc/pccreate"):
+            seen.append(request.headers.get("cookie", ""))
+            state["creates"] += 1
+            if state["creates"] == 1:
+                return httpx.Response(200, json={"status": 0})       # 被拉黑：无任务号、无 resType
+            return httpx.Response(200, json={"status": 0, "pcEditTaskid": "T1", "resType": 0})
+        if request.url.path.endswith("/aigc/pcquery"):
+            return httpx.Response(200, json={"progress": 100, "picArr": [
+                {"src": "data:image/jpeg;base64," + base64.b64encode(b"\xff\xd8\xff" + b"x" * 64).decode()}]})
+        return httpx.Response(404)
+
+    c = _client(handler)
+    raw, info = arun(c.legacy_process("1", b"\x89PNG\r\n\x1a\n" + b"0" * 32))
+    arun(c.aclose())
+    assert state["minted"], "被拉黑后必须去铸新身份"
+    assert state["creates"] == 2, "应当重试一次"
+    assert seen[0] != seen[1] and "FRESH" in seen[1], f"重试必须换 cookie：{seen}"
+    assert info.get("identity_rotated"), "过程记录里要有轮换痕迹（不许静默）"
+
+
+def test_rotation_can_be_disabled_by_knob():
+    """`ROTATE_COOKIE_ON_BURN=0` ⇒ 不铸身份、原样报错（给排障留后门）。"""
+    state = {"minted": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/":
+            state["minted"] = True
+            return httpx.Response(200, headers={"set-cookie": "BAIDUID=X; Path=/"})
+        if request.url.path.endswith("/aigc/pccreate"):
+            return httpx.Response(200, json={"status": 0})
+        return httpx.Response(404)
+
+    c = BaiduClient(Settings(_env_file=None, COOKIE="BAIDUID=old",
+                             ROTATE_COOKIE_ON_BURN=False),
+                    transport=httpx.MockTransport(handler))
+    with pytest.raises(UpstreamUnavailableError):
+        arun(c.legacy_process("1", b"\x89PNG\r\n\x1a\n" + b"0" * 32))
+    arun(c.aclose())
+    assert not state["minted"], "关掉旋钮后不得偷偷铸身份"

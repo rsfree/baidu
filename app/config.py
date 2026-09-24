@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     #: 同一时刻 type=3 用同一张大图收单 ⇒ 差异在**入参体积**，不在链路。
     LEGACY_MAX_IMAGE_SIDE: int = 640
     LEGACY_MAX_IMAGE_BYTES: int = 40000
+
+    #: 老接口把当前 cookie 拉黑时（实测特征：`status=0` 且**无任务号、无 resType**），
+    #: 自动**铸一个匿名 cookie**（GET 首页的 Set-Cookie）并重试一次。
+    #: 依据（2026-09-24 对照实验）：同一 cookie 冷却 15 分钟仍被拒，而**换新 cookie、同 IP 立刻收单**。
+    ROTATE_COOKIE_ON_BURN: bool = True
     # 上游 SSE 总超时：变清晰实测 5.5s、提线稿 20~25s，另加转存与结果下载 ⇒ 180s 留足。
     TIMEOUT: float = 180.0
 
