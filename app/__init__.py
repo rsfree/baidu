@@ -4,4 +4,4 @@
 叫 baidu（端口 8700、env 前缀 `BAIDU_`）。契约全文 docs/INTERFACE.md。
 """
 
-__version__ = "0.1.0"
+__version__ = "0.0.1"
